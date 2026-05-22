@@ -1,0 +1,30 @@
+# Node modules
+node_modules/
+**/node_modules/
+
+# Build output
+FrontendIOT/dist/
+Backend/dist/
+
+# Environment files
+.env
+**/.env
+
+# Coverage
+**/coverage/
+
+# Logs
+*.log
+**/logs/
+
+# OS files
+.DS_Store
+**/.DS_Store
+
+# Angular cache
+.angular/
+**/.angular/
+
+# Playwright
+FrontendIOT/playwright-report/
+FrontendIOT/test-results/

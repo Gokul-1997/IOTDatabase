@@ -1,0 +1,114 @@
+<div class="p-6">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">Production Planning</h1>
+  <p class="text-sm text-gray-500 mb-6">Set production targets and track planned vs actual output</p>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-6">
+    <button (click)="setTab('plans')"
+      class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+      [class]="activeTab === 'plans' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'">
+      Plans
+    </button>
+    <button (click)="setTab('variance')"
+      class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+      [class]="activeTab === 'variance' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'">
+      Planned vs Actual
+    </button>
+  </div>
+
+  <div *ngIf="activeTab === 'plans'">
+    <div class="flex justify-end mb-4">
+      <button (click)="showForm=!showForm" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">+ New Plan</button>
+    </div>
+
+    <div *ngIf="showForm" class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+      <h3 class="font-semibold text-gray-800 mb-3">New Production Plan</h3>
+      <div class="grid grid-cols-3 gap-3">
+        <input [(ngModel)]="form.machine_id" placeholder="Machine ID" type="number" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <input [(ngModel)]="form.plan_date" type="date" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <input [(ngModel)]="form.planned_qty" placeholder="Planned Qty" type="number" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <input [(ngModel)]="form.shift_id" placeholder="Shift ID (optional)" type="number" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <input [(ngModel)]="form.notes" placeholder="Notes" class="col-span-2 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      <div class="flex gap-2 mt-3">
+        <button (click)="save()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Save</button>
+        <button (click)="showForm=false" class="px-4 py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300">Cancel</button>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Date</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Machine</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Shift</th>
+            <th class="px-4 py-3 text-right font-semibold text-gray-600">Planned</th>
+            <th class="px-4 py-3 text-right font-semibold text-gray-600">Actual</th>
+            <th class="px-4 py-3 text-right font-semibold text-gray-600">Achievement</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          <ng-container *ngIf="plans.length > 0; else noPlans">
+            <tr *ngFor="let p of plans" class="hover:bg-gray-50">
+              <td class="px-4 py-3">{{ p.plan_date | date:'mediumDate' }}</td>
+              <td class="px-4 py-3 font-medium">{{ p.machine_serial_no || '--' }}</td>
+              <td class="px-4 py-3 text-gray-500">{{ p.shift_name || '--' }}</td>
+              <td class="px-4 py-3 text-right">{{ p.planned_qty }}</td>
+              <td class="px-4 py-3 text-right">{{ p.actual_qty }}</td>
+              <td class="px-4 py-3 text-right" [class]="achievementClass(p.planned_qty > 0 ? (p.actual_qty / p.planned_qty * 100) : 0)">
+                {{ p.planned_qty > 0 ? ((p.actual_qty / p.planned_qty * 100) | number:'1.1-1') + '%' : '--' }}
+              </td>
+              <td class="px-4 py-3"><button (click)="delete(p.id)" class="text-red-500 hover:text-red-700 text-xs">Delete</button></td>
+            </tr>
+          </ng-container>
+          <ng-template #noPlans>
+            <tr><td colspan="7" class="px-4 py-12 text-center text-gray-400">No plans found</td></tr>
+          </ng-template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div *ngIf="activeTab === 'variance'">
+    <div class="mb-4 flex gap-3">
+      <input [(ngModel)]="filter.from_date" type="date" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <input [(ngModel)]="filter.to_date" type="date" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <button (click)="loadVariance()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Apply</button>
+    </div>
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Date</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Machine</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Shift</th>
+            <th class="px-4 py-3 text-right font-semibold text-gray-600">Planned</th>
+            <th class="px-4 py-3 text-right font-semibold text-gray-600">Actual</th>
+            <th class="px-4 py-3 text-right font-semibold text-gray-600">Variance</th>
+            <th class="px-4 py-3 text-right font-semibold text-gray-600">Achievement %</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          <ng-container *ngIf="variance.length > 0; else noVariance">
+            <tr *ngFor="let v of variance" class="hover:bg-gray-50">
+              <td class="px-4 py-3">{{ v.plan_date | date:'mediumDate' }}</td>
+              <td class="px-4 py-3 font-medium">{{ v.machine_serial_no || '--' }}</td>
+              <td class="px-4 py-3 text-gray-500">{{ v.shift_name || '--' }}</td>
+              <td class="px-4 py-3 text-right">{{ v.planned_qty }}</td>
+              <td class="px-4 py-3 text-right">{{ v.actual_qty }}</td>
+              <td class="px-4 py-3 text-right" [class]="v.variance >= 0 ? 'text-green-600' : 'text-red-600'">
+                {{ v.variance >= 0 ? '+' : '' }}{{ v.variance }}
+              </td>
+              <td class="px-4 py-3 text-right" [class]="achievementClass(v.achievement_pct)">{{ v.achievement_pct }}%</td>
+            </tr>
+          </ng-container>
+          <ng-template #noVariance>
+            <tr><td colspan="7" class="px-4 py-12 text-center text-gray-400">No variance data</td></tr>
+          </ng-template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

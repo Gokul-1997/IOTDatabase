@@ -1,0 +1,592 @@
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+
+  <!-- Admin Tab Navigation -->
+  <div class="flex gap-1 mb-6 bg-white dark:bg-gray-800 rounded-xl shadow p-1 w-fit">
+    <a *ngIf="auth.isSntSuper()" routerLink="/admin/companies" routerLinkActive="bg-blue-600 text-white"
+       class="px-5 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+      Companies
+    </a>
+    <a *ngIf="!auth.isSntSuper()" routerLink="/admin/users" routerLinkActive="bg-blue-600 text-white"
+       class="px-5 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+      Users
+    </a>
+    <a *ngIf="!auth.isSntSuper()" routerLink="/admin/roles" routerLinkActive="bg-blue-600 text-white"
+       class="px-5 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+      Roles & Permissions
+    </a>
+  </div>
+
+  <!-- Card -->
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Company Management</h1>
+        <p class="text-sm text-gray-500 mt-1">Create companies, assign plans & control page access</p>
+      </div>
+      <button (click)="openCreateModal()"
+        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+        + New Company
+      </button>
+    </div>
+
+
+    <!-- Info Banner — Phase 2 -->
+    <div *ngIf="false" class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 rounded-lg p-3 mb-6">
+      <p class="text-sm text-indigo-700 dark:text-indigo-300">
+        <strong>Flow:</strong> 1) Create a company. 2) Assign a plan for resource limits (users, plants, machines).
+        3) Click <strong>"Manage Access"</strong> to select which pages &amp; actions the company can use.
+        4) Company admin creates roles within the allowed access.
+      </p>
+    </div>
+
+    <!-- Loading -->
+    <div *ngIf="loading && companies.length === 0" class="flex justify-center py-12">
+      <div class="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+    </div>
+
+    <!-- Empty -->
+    <div *ngIf="!loading && companies.length === 0" class="text-center py-12 text-gray-500">
+      <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+          d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+      </svg>
+      <p class="font-medium">No companies yet</p>
+      <p class="text-sm mt-1">Create your first company to start managing tenants</p>
+    </div>
+
+    <!-- Companies Table -->
+    <div *ngIf="companies.length > 0" class="overflow-x-auto">
+      <table class="w-full border-collapse">
+        <thead>
+          <tr class="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Company</th>
+            <!-- Phase 2 columns -->
+            <th *ngIf="false" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Plan</th>
+            <th *ngIf="false" class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Limits</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+          <tr *ngFor="let c of companies" class="hover:bg-gray-50 dark:hover:bg-gray-750 transition">
+            <td class="px-4 py-3">
+              <div>
+                <span class="font-semibold text-gray-800 dark:text-white">{{ c.company_name }}</span>
+                <span class="ml-2 text-xs text-gray-400">({{ c.company_code }})</span>
+              </div>
+              <div *ngIf="c.contact_email" class="text-xs text-gray-400 mt-0.5">{{ c.contact_email }}</div>
+            </td>
+            <!-- Phase 2 columns -->
+            <td *ngIf="false" class="px-4 py-3">
+              <span *ngIf="c.plan_name" class="px-2.5 py-1 text-xs font-bold rounded-full" [ngClass]="getTierBadgeClass(c.tier)">
+                {{ c.plan_name }}
+              </span>
+              <span *ngIf="!c.plan_name" class="text-xs text-red-400 italic">No plan</span>
+            </td>
+            <td *ngIf="false" class="px-4 py-3 text-center">
+              <div *ngIf="c.plan_name" class="text-xs text-gray-500 space-y-0.5">
+                <div>Users: <strong>{{ c.max_users }}</strong></div>
+                <div>Plants: <strong>{{ c.max_plants }}</strong></div>
+                <div>Machines: <strong>{{ c.max_machines }}</strong></div>
+              </div>
+              <span *ngIf="!c.plan_name" class="text-xs text-gray-400">-</span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <span *ngIf="c.is_active" class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-medium">Active</span>
+              <span *ngIf="!c.is_active" class="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full font-medium">Inactive</span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                <!-- Phase 2 buttons -->
+                <button *ngIf="false" (click)="openPlantsModal(c)"
+                  class="px-3 py-1.5 bg-teal-600 text-white text-xs rounded-lg hover:bg-teal-700 font-medium">
+                  Plants
+                </button>
+                <button *ngIf="false" (click)="openAccessModal(c)"
+                  class="px-3 py-1.5 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 font-medium">
+                  Access
+                </button>
+                <button *ngIf="false" (click)="openPlanModal(c)"
+                  class="px-3 py-1.5 bg-indigo-500 text-white text-xs rounded-lg hover:bg-indigo-600 font-medium">
+                  Plan
+                </button>
+                <button *ngIf="false" (click)="openDetail(c)"
+                  class="px-3 py-1.5 bg-gray-500 text-white text-xs rounded-lg hover:bg-gray-600 font-medium">
+                  View
+                </button>
+                <button *ngIf="false" (click)="openEditModal(c)"
+                  class="px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600 font-medium">
+                  Edit
+                </button>
+                <button (click)="deactivateCompany(c)" *ngIf="c.is_active"
+                  class="px-3 py-1.5 bg-amber-500 text-white text-xs rounded-lg hover:bg-amber-600 font-medium">
+                  Deactivate
+                </button>
+                <button (click)="activateCompany(c)" *ngIf="!c.is_active"
+                  class="px-3 py-1.5 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600 font-medium">
+                  Activate
+                </button>
+                <button *ngIf="false" (click)="permanentDeleteCompany(c)"
+                  class="px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600 font-medium">
+                  Delete
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────── CREATE/EDIT COMPANY MODAL ─────────── -->
+<div *ngIf="showModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+      <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+        {{ isEditing ? 'Edit Company' : 'Create New Company' }}
+      </h2>
+      <button (click)="closeModal()" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div>
+        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Company Code *</label>
+        <input [(ngModel)]="form.company_code" type="text" [disabled]="isEditing"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
+          placeholder="e.g., ACME">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Company Name *</label>
+        <input [(ngModel)]="form.company_name" type="text"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+          placeholder="e.g., Acme Manufacturing Ltd.">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Email</label>
+          <input [(ngModel)]="form.contact_email" type="email"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="admin&#64;acme.com">
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Phone</label>
+          <input [(ngModel)]="form.contact_phone" type="text"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="+91-XXXX">
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Address</label>
+        <textarea [(ngModel)]="form.address" rows="2"
+          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+          placeholder="City, State"></textarea>
+      </div>
+
+      <!-- Admin User (only on Create) -->
+      <div *ngIf="!isEditing" class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+        <h3 class="text-sm font-bold text-gray-800 dark:text-white mb-3 flex items-center gap-2">
+          <svg class="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+          </svg>
+          Company Admin User
+        </h3>
+        <p class="text-xs text-gray-400 mb-3">This user will manage users & roles for this company. Password will be auto-generated and sent via email.</p>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Admin Username *</label>
+            <input [(ngModel)]="form.admin_username" type="text"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="e.g., acme_admin">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Admin Email *</label>
+            <input [(ngModel)]="form.admin_email" type="email"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="admin@company.com">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+      <button (click)="closeModal()"
+        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 text-sm font-medium">
+        Cancel
+      </button>
+      <button (click)="saveCompany()" [disabled]="loading"
+        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+        {{ loading ? 'Saving...' : (isEditing ? 'Update' : 'Create') }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────── ASSIGN PLAN MODAL ─────────── -->
+<div *ngIf="showPlanModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+      <div>
+        <h2 class="text-xl font-bold text-gray-800 dark:text-white">Assign Plan</h2>
+        <p class="text-sm text-gray-500 mt-0.5">{{ selectedCompany?.company_name }} — set resource limits</p>
+      </div>
+      <button (click)="closePlanModal()" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="p-6 space-y-5">
+      <!-- Plan Cards -->
+      <div class="grid grid-cols-3 gap-3">
+        <div *ngFor="let plan of plans"
+          (click)="planForm.plan_id = plan.id"
+          class="relative p-4 rounded-xl border-2 cursor-pointer transition text-center"
+          [ngClass]="planForm.plan_id === plan.id
+            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+            : 'border-gray-200 dark:border-gray-600 hover:border-blue-300'">
+          <div class="text-xs font-bold uppercase tracking-wider mb-1"
+            [ngClass]="getTierBadgeClass(plan.tier)"
+            style="display: inline-block; padding: 2px 8px; border-radius: 999px;">
+            {{ plan.plan_name }}
+          </div>
+          <div class="text-xs text-gray-500 mt-2 space-y-0.5">
+            <div>{{ plan.max_users }} users</div>
+            <div>{{ plan.max_plants }} plants</div>
+            <div>{{ plan.max_machines }} machines</div>
+          </div>
+          <div *ngIf="planForm.plan_id === plan.id"
+            class="absolute top-1.5 right-1.5 w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs">
+            &#10003;
+          </div>
+        </div>
+      </div>
+
+      <!-- Custom Overrides -->
+      <div>
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Custom Overrides (optional)</p>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Max Users</label>
+            <input [(ngModel)]="planForm.max_users" type="number" min="1"
+              class="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              [placeholder]="getSelectedPlan()?.max_users || 'default'">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Max Plants</label>
+            <input [(ngModel)]="planForm.max_plants" type="number" min="1"
+              class="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              [placeholder]="getSelectedPlan()?.max_plants || 'default'">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Max Machines</label>
+            <input [(ngModel)]="planForm.max_machines" type="number" min="1"
+              class="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              [placeholder]="getSelectedPlan()?.max_machines || 'default'">
+          </div>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Leave blank to use the plan's default limits</p>
+      </div>
+    </div>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+      <button (click)="closePlanModal()"
+        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 text-sm font-medium">
+        Cancel
+      </button>
+      <button (click)="assignPlan()" [disabled]="loading"
+        class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium">
+        {{ loading ? 'Assigning...' : 'Assign Plan' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────── MANAGE PAGE ACCESS MODAL ─────────── -->
+<div *ngIf="showAccessModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
+      <div>
+        <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+          Manage Access: <span class="text-emerald-600">{{ accessCompany?.company_name }}</span>
+        </h2>
+        <p class="text-sm text-gray-500 mt-0.5">Select which pages and actions this company can access (based on payment)</p>
+      </div>
+      <button (click)="closeAccessModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div *ngIf="accessLoading" class="flex justify-center py-12">
+      <div class="animate-spin w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full"></div>
+    </div>
+
+    <!-- Empty -->
+    <div *ngIf="!accessLoading && allPermissions.length === 0" class="text-center py-12 text-gray-500 px-6">
+      <p class="font-medium">No permissions found</p>
+      <p class="text-sm mt-1">Go to Roles & Permissions tab and click <strong>"Sync Pages"</strong> first to register all pages.</p>
+    </div>
+
+    <!-- Scrollable body -->
+    <div *ngIf="!accessLoading && allPermissions.length > 0" class="overflow-y-auto flex-1 p-6">
+      <div *ngFor="let group of getAccessGroups()" class="mb-6">
+        <!-- Group Header -->
+        <div class="flex items-center gap-2 mb-3 pb-2 border-b-2 border-gray-200 dark:border-gray-600">
+          <input type="checkbox"
+            [checked]="isGroupAllSelected(group)"
+            [indeterminate]="isGroupPartial(group)"
+            (change)="toggleGroup(group)"
+            class="w-4 h-4 accent-emerald-600 cursor-pointer">
+          <span class="font-bold text-gray-700 dark:text-gray-200 text-sm uppercase tracking-wider">{{ group }}</span>
+          <span class="text-xs text-gray-400 ml-auto">Select All</span>
+        </div>
+
+        <!-- Modules in this group -->
+        <div class="space-y-3">
+          <div *ngFor="let mod of getModulesByGroup(group)"
+            class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
+            <!-- Module header with select all -->
+            <div class="flex items-center gap-2 mb-2">
+              <input type="checkbox"
+                [checked]="isModuleAllSelected(mod)"
+                [indeterminate]="isModulePartial(mod)"
+                (change)="toggleModule(mod)"
+                class="w-4 h-4 accent-emerald-600 cursor-pointer">
+              <span class="font-semibold text-gray-700 dark:text-gray-200 text-sm">{{ mod.label }}</span>
+              <span class="text-xs text-gray-400">({{ mod.module }})</span>
+            </div>
+            <!-- Actions grid -->
+            <div class="flex flex-wrap gap-2 ml-6">
+              <label *ngFor="let perm of mod.permissions"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition text-sm"
+                [ngClass]="isPermSelected(perm.id)
+                  ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-emerald-200'">
+                <input type="checkbox"
+                  [checked]="isPermSelected(perm.id)"
+                  (change)="togglePerm(perm.id)"
+                  class="w-3.5 h-3.5 accent-emerald-600 cursor-pointer">
+                <span class="font-medium">{{ perm.actionLabel || perm.action }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-700 shrink-0">
+      <span class="text-sm text-gray-500">
+        {{ companyPermIds.size }} permission(s) selected
+      </span>
+      <div class="flex gap-3">
+        <button (click)="closeAccessModal()"
+          class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+          Cancel
+        </button>
+        <button (click)="saveCompanyAccess()" [disabled]="accessLoading"
+          class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-medium">
+          {{ accessLoading ? 'Saving...' : 'Save Access' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────── DETAIL MODAL ─────────── -->
+<div *ngIf="showDetailModal && detailCompany" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+      <h2 class="text-xl font-bold text-gray-800 dark:text-white">{{ detailCompany.company_name }}</h2>
+      <button (click)="closeDetailModal()" class="text-gray-400 hover:text-gray-600">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="p-6 space-y-4">
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div><span class="text-gray-500">Code:</span> <strong>{{ detailCompany.company_code }}</strong></div>
+        <div><span class="text-gray-500">Plan:</span>
+          <span class="font-bold" [ngClass]="getTierBadgeClass(detailCompany.tier)" style="padding: 1px 6px; border-radius: 999px;">
+            {{ detailCompany.plan_name || 'None' }}
+          </span>
+        </div>
+        <div><span class="text-gray-500">Email:</span> {{ detailCompany.contact_email || '-' }}</div>
+        <div><span class="text-gray-500">Phone:</span> {{ detailCompany.contact_phone || '-' }}</div>
+      </div>
+
+      <!-- Usage -->
+      <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Usage vs Limits</h3>
+        <div class="space-y-2">
+          <div class="flex justify-between text-sm">
+            <span class="text-gray-500">Users</span>
+            <span class="font-medium">{{ detailCompany.current_users }} / {{ detailCompany.max_users }}</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-blue-500 h-2 rounded-full transition-all"
+              [style.width.%]="detailCompany.max_users ? (detailCompany.current_users / detailCompany.max_users * 100) : 0"></div>
+          </div>
+
+          <div class="flex justify-between text-sm mt-2">
+            <span class="text-gray-500">Plants</span>
+            <span class="font-medium">{{ detailCompany.current_plants }} / {{ detailCompany.max_plants }}</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-green-500 h-2 rounded-full transition-all"
+              [style.width.%]="detailCompany.max_plants ? (detailCompany.current_plants / detailCompany.max_plants * 100) : 0"></div>
+          </div>
+
+          <div class="flex justify-between text-sm mt-2">
+            <span class="text-gray-500">Machines</span>
+            <span class="font-medium">{{ detailCompany.current_machines }} / {{ detailCompany.max_machines }}</span>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-purple-500 h-2 rounded-full transition-all"
+              [style.width.%]="detailCompany.max_machines ? (detailCompany.current_machines / detailCompany.max_machines * 100) : 0"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="flex justify-end px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+      <button (click)="closeDetailModal()"
+        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────── PLANTS MODAL ─────────── -->
+<div *ngIf="showPlantsModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
+      <div>
+        <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+          Plants — <span class="text-teal-600">{{ plantsCompany?.company_name }}</span>
+        </h2>
+        <p class="text-sm text-gray-500 mt-0.5">Manage plants for this company</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button *ngIf="!showPlantForm" (click)="openPlantCreate()"
+          class="px-3 py-1.5 bg-teal-600 text-white text-sm rounded-lg hover:bg-teal-700 font-medium">
+          + Add Plant
+        </button>
+        <button (click)="closePlantsModal()" class="text-gray-400 hover:text-gray-600">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Inline Create / Edit form -->
+    <div *ngIf="showPlantForm" class="shrink-0 p-5 border-b border-gray-200 dark:border-gray-700 bg-teal-50 dark:bg-teal-900/10">
+      <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">
+        {{ plantFormData ? 'Edit Plant' : 'New Plant' }}
+      </h3>
+      <div class="grid grid-cols-3 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Plant Code *</label>
+          <input [(ngModel)]="plantForm.plant_code" [disabled]="!!plantFormData"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none disabled:opacity-50"
+            placeholder="PLT-001">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Plant Name *</label>
+          <input [(ngModel)]="plantForm.plant_name"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+            placeholder="Chennai Plant">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Location</label>
+          <input [(ngModel)]="plantForm.location"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+            placeholder="City, State">
+        </div>
+      </div>
+      <div *ngIf="plantFormError" class="mt-2 text-xs text-red-600">{{ plantFormError }}</div>
+      <div class="flex justify-end gap-2 mt-3">
+        <button (click)="cancelPlantForm()" [disabled]="plantFormSaving"
+          class="px-3 py-1.5 border border-gray-300 rounded-lg text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-50 disabled:opacity-50">
+          Cancel
+        </button>
+        <button (click)="savePlant()" [disabled]="plantFormSaving"
+          class="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50 flex items-center gap-1.5">
+          <span *ngIf="plantFormSaving" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+          {{ plantFormSaving ? 'Saving…' : 'Save Plant' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Plants list -->
+    <div class="overflow-y-auto flex-1 p-6">
+      <div *ngIf="plantsLoading" class="flex justify-center py-10">
+        <div class="animate-spin w-7 h-7 border-4 border-teal-500 border-t-transparent rounded-full"></div>
+      </div>
+      <div *ngIf="plantsError && !plantsLoading" class="text-center py-8 text-red-500 text-sm">{{ plantsError }}</div>
+      <div *ngIf="!plantsLoading && !plantsError && plants.length === 0" class="text-center py-10 text-gray-400">
+        <p class="font-medium">No plants yet</p>
+        <p class="text-sm mt-1">Click <strong>+ Add Plant</strong> to create the first plant.</p>
+      </div>
+      <table *ngIf="!plantsLoading && plants.length > 0" class="w-full border-collapse text-sm">
+        <thead>
+          <tr class="border-b border-gray-200 dark:border-gray-700 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            <th class="pb-2 text-left">#</th>
+            <th class="pb-2 text-left">Code</th>
+            <th class="pb-2 text-left">Name</th>
+            <th class="pb-2 text-left">Location</th>
+            <th class="pb-2 text-center">Status</th>
+            <th class="pb-2 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+          <tr *ngFor="let p of plants; let i = index" class="hover:bg-gray-50 dark:hover:bg-gray-750">
+            <td class="py-2.5 pr-3 text-gray-400">{{ i + 1 }}</td>
+            <td class="py-2.5 pr-3 font-mono font-semibold text-teal-700 dark:text-teal-400">{{ p.plant_code }}</td>
+            <td class="py-2.5 pr-3 font-medium text-gray-800 dark:text-white">{{ p.plant_name }}</td>
+            <td class="py-2.5 pr-3 text-gray-500">{{ p.location || '—' }}</td>
+            <td class="py-2.5 text-center">
+              <span class="px-2 py-0.5 text-xs rounded-full font-medium"
+                [ngClass]="p.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'">
+                {{ p.is_active ? 'Active' : 'Inactive' }}
+              </span>
+            </td>
+            <td class="py-2.5 text-center">
+              <div class="flex items-center justify-center gap-2">
+                <button (click)="openPlantEdit(p)"
+                  class="px-2.5 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600">Edit</button>
+                <button (click)="togglePlantStatus(p)"
+                  class="px-2.5 py-1 text-xs rounded text-white"
+                  [ngClass]="p.is_active ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-500 hover:bg-green-600'">
+                  {{ p.is_active ? 'Deactivate' : 'Activate' }}
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-700 shrink-0">
+      <span class="text-sm text-gray-500">
+        {{ plants.length }} plant{{ plants.length !== 1 ? 's' : '' }}
+        <span *ngIf="plantsCompany?.max_plants"> / {{ plantsCompany.max_plants }} allowed</span>
+      </span>
+      <button (click)="closePlantsModal()"
+        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium">Close</button>
+    </div>
+
+  </div>
+</div>

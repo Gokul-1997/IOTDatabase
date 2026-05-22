@@ -1,0 +1,125 @@
+/* MACHINE CARD */
+.machine-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+  transition: 0.3s;
+  cursor: pointer;
+}
+
+.machine-card:hover {
+  transform: translateY(-4px);
+}
+
+/* HEADER */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.card-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* OEE CIRCLE */
+.circle {
+  position: relative;
+  width: 70px;
+  height: 70px;
+}
+
+.circle svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.circle .bg {
+  fill: none;
+  stroke: #e5e7eb;
+  stroke-width: 3;
+  pathLength: 100;
+}
+
+.circle .progress {
+  fill: none;
+  stroke: #2B3990;
+  stroke-width: 3;
+  stroke-linecap: round;
+  pathLength: 100;
+}
+
+.percent {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* OPERATOR BOX */
+.operator-box {
+  background: #EEF3FF;
+  padding: 12px;
+  border-radius: 12px;
+  margin-bottom: 15px;
+}
+
+.operator-box p {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 2px 0;
+}
+
+.operator-box h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+/* TARGET BOX */
+.target-box {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.target-box span {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.target-box b {
+  font-size: 14px;
+}
+
+/* TIME BOX */
+.time-box {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.run { color: #16a34a; font-weight: 600; }
+.idle { color: #f59e0b; font-weight: 600; }
+.off { color: #ef4444; font-weight: 600; }
+
+/* STATUS BADGE */
+.status {
+  text-align: center;
+  padding: 6px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+}
+
+.status.running { background: #16a34a; }
+.status.idle { background: #f59e0b; }
+.status.stopped { background: #ef4444; }

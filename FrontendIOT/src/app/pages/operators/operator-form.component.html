@@ -1,0 +1,109 @@
+<div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+  <div class="bg-common w-[640px] rounded-xl p-6 max-h-[90vh] overflow-auto op-modal border-modal">
+
+    <div class="modal-header border-b-red-200 border">
+        <h3>{{ data ? 'Edit Operator' : 'Create Operator' }}</h3>
+        <button mat-icon-button (click)="close.emit()">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+    
+
+    <form [formGroup]="form">
+      <div>
+      <div class="flex gap-4 flex-grow">
+      <!-- Operator Code -->
+      <div class="mb-3 flex-1">
+        <label class="block text-sm mb-1 font-medium">Employee Id *</label>
+        <input
+          formControlName="operator_code"
+          placeholder="e.g. Employee-001"
+          class="filter-select"
+          [class.border-red-500]="form.get('operator_code')?.invalid && form.get('operator_code')?.touched" />
+        <div *ngIf="form.get('operator_code')?.touched && form.get('operator_code')?.errors?.['required']"
+          class="mt-1 text-xs text-red-500">
+          Employee Id is required.
+        </div>
+      </div>
+
+      <!-- Operator Name -->
+      <div class="mb-3 flex-1">
+        <label class="block text-sm mb-1 font-medium">Operator Name *</label>
+        <input
+          formControlName="operator_name"
+          placeholder="Full Name"
+          class="filter-select"
+          [class.border-red-500]="form.get('operator_name')?.invalid && form.get('operator_name')?.touched" />
+        <div *ngIf="form.get('operator_name')?.touched && form.get('operator_name')?.errors?.['required']"
+          class="mt-1 text-xs text-red-500">
+          Operator Name is required.
+        </div>
+      </div>
+  </div>
+  <div class="flex gap-4">
+      <!-- Skill Level -->
+      <div class="mb-3 flex-1">
+        <label class="block text-sm mb-1 font-medium">Skill Level</label>
+        <input
+          formControlName="skill_level"
+          placeholder="e.g. Senior"
+          class="filter-select" />
+      </div>
+
+      <!-- Shift -->
+      <div class="mb-3 flex-1">
+        <label class="block text-sm mb-1 font-medium">Shift *</label>
+        <select
+          formControlName="shift_id"
+          class="filter-select"
+          [class.border-red-500]="form.get('shift_id')?.invalid && form.get('shift_id')?.touched">
+          <option [ngValue]="null">Select Shift</option>
+          <option *ngFor="let s of shifts" [ngValue]="s.id">
+            {{ s.shift_name }} ({{ s.start_time }} – {{ s.end_time }})
+          </option>
+        </select>
+        <div *ngIf="form.get('shift_id')?.touched && form.get('shift_id')?.errors?.['required']"
+          class="mt-1 text-xs text-red-500">
+          Please select a shift.
+        </div>
+      </div>
+</div>
+      <!-- Machines -->
+      <div class="mb-3">
+        <label class="block text-sm mb-1 font-medium">Machines</label>
+        <div class="rounded filter-select border px-3 py-2 max-h-36 overflow-y-auto flex gap-6">
+          <label *ngFor="let m of machines"
+            class="flex items-center gap-2 py-1 cursor-pointer hover:text-blue-600">
+            <input
+              type="checkbox"
+              class="w-4 h-4 rounded accent-blue-600"
+              [checked]="isMachineSelected(m.id)"
+              (change)="toggleMachine(m.id)" />
+            <span class="text-sm">{{ m.machine_serial_no }}</span>
+          </label>
+          <p *ngIf="machines.length === 0" class="text-xs text-gray-400 py-1">No machines available</p>
+        </div>
+      </div>
+
+      <!-- Active -->
+      <div class="mb-4 flex items-center gap-3">
+        <input type="checkbox" formControlName="is_active" id="is_active"
+          class="w-4 h-4 rounded" />
+        <label for="is_active" class="text-sm font-medium">Active</label>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex justify-end gap-3">
+        <button type="button" (click)="close.emit()" class="btn-secondary">
+          Cancel
+        </button>
+        <button type="button" (click)="submit()" [disabled]="saving"
+          class="btn-default">
+          {{ saving ? 'Saving…' : (data ? 'Update Operator' : 'Create Operator') }}
+        </button>
+      </div>
+</div>
+    </form>
+  </div>
+</div>

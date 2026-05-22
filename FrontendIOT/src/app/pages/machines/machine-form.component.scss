@@ -1,0 +1,28 @@
+.form {
+  max-width: 400px;
+  background: #fff;
+  padding: 20px;
+  border-radius: 4px;
+
+  label {
+    display: block;
+    margin-top: 10px;
+    font-weight: 600;
+  }
+
+  input {
+    width: 100%;
+    padding: 8px;
+    margin-top: 4px;
+  }
+
+  button {
+    margin-top: 20px;
+    padding: 10px;
+    width: 100%;
+    background: #1890ff;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+}

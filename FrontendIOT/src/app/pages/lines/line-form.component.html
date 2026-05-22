@@ -1,0 +1,48 @@
+<div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+  <div class="bg-common w-[420px] rounded-xl p-6 max-h-[90vh] overflow-auto border-modal">
+
+    <!-- Header -->
+    <div class="modal-header">
+      <h3 class="text-lg font-semibold">{{ data ? 'Edit Line' : 'Create Line' }}</h3>
+      <button (click)="close.emit()" class="text-gray-500 hover:text-red-500 text-xl">
+        ✕
+      </button>
+    </div>
+
+    <form [formGroup]="form">
+
+      <!-- Line Name -->
+      <div class="mb-3">
+        <label class="block text-sm mb-1 font-medium">Line Name *</label>
+        <input
+          formControlName="name"
+          placeholder="e.g., Assembly Line A"
+          class="filter-select"
+          [class.border-red-500]="form.get('name')?.invalid && form.get('name')?.touched" />
+        <div *ngIf="form.get('name')?.touched && form.get('name')?.errors?.['required']"
+          class="mt-1 text-xs text-red-500">
+          Line Name is required.
+        </div>
+      </div>
+
+      <!-- Active Status -->
+      <div class="mb-4 flex items-center gap-3">
+        <input type="checkbox" formControlName="is_active" id="is_active"
+          class="w-4 h-4 rounded" />
+        <label for="is_active" class="text-sm font-medium">Active</label>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex justify-end gap-3">
+        <button type="button" (click)="close.emit()" class="btn-secondary">
+          Cancel
+        </button>
+        <button type="button" (click)="submit()" [disabled]="saving"
+          class="btn-primary">
+          {{ saving ? 'Saving…' : (data ? 'Update Line' : 'Create Line') }}
+        </button>
+      </div>
+
+    </form>
+  </div>
+</div>

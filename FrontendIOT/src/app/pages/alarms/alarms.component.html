@@ -1,0 +1,90 @@
+<div class="p-6">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-800">Machine Alarms</h1>
+      <p class="text-sm text-gray-500 mt-1">Monitor and resolve machine alarms and offline events</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="bg-white rounded-xl shadow-sm border p-4 mb-6 flex gap-4 flex-wrap">
+    <select [(ngModel)]="filter.is_resolved" (change)="filter.page=1; load()"
+      class="border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <option value="false">Active Alarms</option>
+      <option value="true">Resolved</option>
+      <option value="">All</option>
+    </select>
+    <button (click)="load()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors">
+      Refresh
+    </button>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+    <div *ngIf="loading" class="flex items-center justify-center py-12">
+      <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <table *ngIf="!loading" class="w-full text-sm">
+      <thead class="bg-gray-50 border-b">
+        <tr>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Machine</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Type</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Severity</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Message</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Started</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        <ng-container *ngIf="alarms.length > 0; else noAlarms">
+          <tr *ngFor="let alarm of alarms" class="hover:bg-gray-50 transition-colors">
+            <td class="px-4 py-3 font-medium text-gray-800">{{ alarm.machine_serial_no }}</td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-1 rounded-md text-xs font-medium"
+                [class]="alarm.alarm_type === 'ALARM' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'">
+                {{ alarm.alarm_type }}
+              </span>
+            </td>
+            <td class="px-4 py-3">
+              <span class="px-2 py-1 rounded-md text-xs font-medium" [class]="severityClass(alarm.severity)">
+                {{ alarm.severity }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-gray-600 max-w-xs truncate">{{ alarm.message || '--' }}</td>
+            <td class="px-4 py-3 text-gray-500">{{ alarm.started_at | date:'short' }}</td>
+            <td class="px-4 py-3">
+              <span *ngIf="alarm.is_resolved" class="px-2 py-1 bg-green-100 text-green-700 rounded-md text-xs font-medium">Resolved</span>
+              <span *ngIf="!alarm.is_resolved" class="px-2 py-1 bg-red-100 text-red-700 rounded-md text-xs font-medium">Active</span>
+            </td>
+            <td class="px-4 py-3">
+              <ng-container *ngIf="!alarm.is_resolved">
+                <div *ngIf="resolvingId === alarm.id" class="flex gap-2 items-center">
+                  <input [(ngModel)]="resolveNote" placeholder="Resolution note" class="border rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <button (click)="resolve(alarm.id)" class="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">Save</button>
+                  <button (click)="resolvingId=null" class="px-2 py-1 bg-gray-200 rounded text-xs hover:bg-gray-300">Cancel</button>
+                </div>
+                <button *ngIf="resolvingId !== alarm.id" (click)="resolvingId=alarm.id" class="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:bg-green-700 transition-colors">
+                  Resolve
+                </button>
+              </ng-container>
+            </td>
+          </tr>
+        </ng-container>
+        <ng-template #noAlarms>
+          <tr><td colspan="7" class="px-4 py-12 text-center text-gray-400">No alarms found</td></tr>
+        </ng-template>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div *ngIf="pagination.totalPages > 1" class="flex justify-end mt-4 gap-2">
+    <button [disabled]="filter.page <= 1" (click)="filter.page = filter.page - 1; load()"
+      class="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Previous</button>
+    <span class="px-3 py-1 text-sm text-gray-600">{{ filter.page }} / {{ pagination.totalPages }}</span>
+    <button [disabled]="filter.page >= pagination.totalPages" (click)="filter.page = filter.page + 1; load()"
+      class="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Next</button>
+  </div>
+</div>
