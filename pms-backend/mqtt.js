@@ -323,8 +323,25 @@ async function handleMessage(apiKey, payload) {
 
   const partsCount = Number(payload.parts_count ?? 0);
 
-  const producedDelta = prev?.parts_count != null
-    ? partsDelta(prev.parts_count, partsCount)
+  // When Redis has expired (machine offline > 5 min), fall back to the last
+  // telemetry_raw row so parts produced during the gap are not silently dropped.
+  let prevPartsCount = prev?.parts_count ?? null;
+  if (prevPartsCount == null) {
+    try {
+      const { rows: fallback } = await pool.query(
+        `SELECT parts_count FROM telemetry_raw
+         WHERE machine_id = $1 AND received_at < to_timestamp($2)
+         ORDER BY received_at DESC LIMIT 1`,
+        [machine.id, deviceTime]
+      );
+      prevPartsCount = fallback[0]?.parts_count ?? null;
+    } catch (err) {
+      log('warn', 'fallback parts lookup failed', { machine_id: machine.id, error: err.message });
+    }
+  }
+
+  const producedDelta = prevPartsCount != null
+    ? partsDelta(prevPartsCount, partsCount)
     : 0;
 
   let energyDelta = null;
