@@ -149,9 +149,9 @@
 
         <div *ngIf="auth.hasWidget('dashboard', 'operator')" class="menu-default rounded-xl p-4 md:p-2 text-sm space-y-2 grid grid-cols-2 md:grid-cols-1">
 
-          <div>
+          <div class="min-w-0">
             <span class="text-gray-700 dark:text-[#939393] ">Operator</span><br>
-            <b>{{ m.operator_name || '--' }}</b>
+            <b class="block truncate" [title]="m.operator_name || '--'">{{ m.operator_name || '--' }}</b>
           </div>
 
           <div>
