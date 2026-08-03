@@ -40,6 +40,7 @@ export class HeaderComponent implements OnInit {
       label: 'Settings', icon: 'gearnew',
       children: [
         { label: 'Machines', path: '/machines', permission: 'page:machines' },
+        { label: 'Program Transfer', path: '/programs', permission: 'page:machines' },
         { label: 'Component', path: '/component', permission: 'page:component' },
         { label: 'Job', path: '/job', permission: 'page:job' },
         { label: 'Lines', path: '/lines', permission: 'page:lines' },
@@ -48,7 +49,7 @@ export class HeaderComponent implements OnInit {
         { label: '2FA Security', path: '/security/2fa', permission: 'page:security' }
       ]
     },
-    // { label: 'Admin', path: '/admin/users', icon: 'shield', adminOnly: true } 
+    { label: 'Admin', path: '/admin/users', icon: 'shield', adminOnly: true } 
   ];
 
   menus: any[] = [];

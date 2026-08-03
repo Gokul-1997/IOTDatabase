@@ -17,6 +17,7 @@ import {
 
 import { MachinesService } from './machines.service';
 import { ToastService } from '../../core/services/toast.service';
+import { ProgramService } from '../../core/services/program.service';
 
 @Component({
   standalone: true,
@@ -31,6 +32,7 @@ export class MachineFormComponent implements OnInit {
   @Output() close = new EventEmitter<void>();
 
   uploading = false;
+  testingConnection = false;
   previewUrl: string | null = null;
   lines: any[] = [];
   form!: FormGroup;
@@ -39,6 +41,7 @@ export class MachineFormComponent implements OnInit {
     private fb: FormBuilder,
     private service: MachinesService,
     private toast: ToastService,
+    private programService: ProgramService,
     private cdr: ChangeDetectorRef
   ) {}
 
@@ -60,7 +63,12 @@ export class MachineFormComponent implements OnInit {
       twin_table: [false],
       atc_tool_capacity: [''],
       line_id: [null, Validators.required],
-      is_active: [true]
+      is_active: [true],
+      ip_address: [''],
+      ftp_port: [21],
+      ftp_user: [''],
+      ftp_pass: [''],
+      ftp_dir: ['']
     });
     this.loadLines();
   }
@@ -114,6 +122,38 @@ export class MachineFormComponent implements OnInit {
   }
 
   ////////////////////////////////////////////
+  // TEST FTP CONNECTION
+  ////////////////////////////////////////////
+
+  testConnection() {
+    const v = this.form.value;
+    if (!v.ip_address) {
+      this.toast.error('Enter the machine IP address first');
+      return;
+    }
+
+    this.testingConnection = true;
+    this.programService.testConnection({
+      machine_id: this.data?.id,
+      ip_address: v.ip_address,
+      ftp_port: v.ftp_port,
+      ftp_user: v.ftp_user,
+      ftp_pass: v.ftp_pass   // blank = use saved password (write-only)
+    }).subscribe({
+      next: () => {
+        this.testingConnection = false;
+        this.toast.success('FTP connection successful');
+        this.cdr.detectChanges();
+      },
+      error: err => {
+        this.testingConnection = false;
+        this.toast.error(err.error?.message || 'FTP connection failed');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  ////////////////////////////////////////////
   // SAVE (PRODUCTION SAFE)
   ////////////////////////////////////////////
 
@@ -130,6 +170,12 @@ export class MachineFormComponent implements OnInit {
       const changed: any = {};
 
       Object.keys(this.form.controls).forEach(key => {
+        // ftp_pass is write-only: the API never returns it, so an empty
+        // field means "unchanged", not "clear the password"
+        if (key === 'ftp_pass') {
+          if (this.form.get(key)?.value) changed[key] = this.form.get(key)?.value;
+          return;
+        }
         if (this.form.get(key)?.value !== this.data[key]) {
           changed[key] = this.form.get(key)?.value;
         }
@@ -160,6 +206,8 @@ export class MachineFormComponent implements OnInit {
     if (!this.data) return false;
 
     return Object.keys(this.form.controls)
-      .every(key => this.form.get(key)?.value === this.data[key]);
+      .every(key => key === 'ftp_pass'
+        ? !this.form.get(key)?.value   // blank password = unchanged
+        : this.form.get(key)?.value === this.data[key]);
   }
 }

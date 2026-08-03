@@ -165,6 +165,50 @@
         </div>
             </div>
 
+            <!-- Network / Program Transfer (DNC) -->
+            <div class="pt-2">
+              <label class="block text-sm mb-2 font-semibold text-gray-700">Network / Program Transfer (FTP)</label>
+              <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div class="mb-0">
+                  <label class="block text-sm mb-1 font-medium">IP Address</label>
+                  <input formControlName="ip_address" placeholder="e.g. 192.168.1.101"
+                    class="filter-select" />
+                </div>
+
+                <div class="mb-0">
+                  <label class="block text-sm mb-1 font-medium">FTP Port</label>
+                  <input type="number" formControlName="ftp_port" placeholder="21"
+                    class="filter-select" />
+                </div>
+
+                <div class="mb-0">
+                  <label class="block text-sm mb-1 font-medium">FTP User</label>
+                  <input formControlName="ftp_user" placeholder="FTP User"
+                    class="filter-select" />
+                </div>
+
+                <div class="mb-0">
+                  <label class="block text-sm mb-1 font-medium">FTP Password</label>
+                  <input type="password" formControlName="ftp_pass"
+                    [placeholder]="data ? 'Leave blank to keep existing' : 'FTP Password'"
+                    class="filter-select" />
+                </div>
+
+                <div class="mb-0">
+                  <label class="block text-sm mb-1 font-medium">FTP Folder</label>
+                  <input formControlName="ftp_dir" placeholder="e.g. /PROGRAM"
+                    class="filter-select" />
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <button type="button" (click)="testConnection()" [disabled]="testingConnection"
+                  class="px-4 py-2 bg-gray-100 text-gray-700 border rounded-lg text-sm hover:bg-gray-200 disabled:opacity-50 transition-colors">
+                  {{ testingConnection ? 'Testing...' : 'Test Connection' }}
+                </button>
+              </div>
+            </div>
+
             <!-- Checkboxes -->
             <div class="flex items-center gap-6 pt-2">
               <label class="flex items-center gap-2 text-sm">

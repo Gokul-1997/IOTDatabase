@@ -14,6 +14,13 @@ const messageIdCache = new Map();
 const RUN_STATES    = new Set(['RUN', 'RUNNING', 'CUTTING']);
 const MANUAL_STATES = new Set(['MANUAL', 'SETUP']);
 
+// Track service start time so broker-replayed messages arriving right after
+// a restart are not dropped by the stale-message filter.
+// For the first STARTUP_REPLAY_WINDOW_MS, allow messages up to 24h old.
+const SERVICE_START_MS         = Date.now();
+const STARTUP_REPLAY_WINDOW_MS = 10 * 60 * 1000;   // 10 min after start
+const STARTUP_MAX_STALE_MS     = 24 * 60 * 60 * 1000; // accept up to 24h old during replay
+
 const NEGATIVE_TTL_MS     = 30_000;     // 30s — re-check unknown machines
 const CACHE_REFRESH_MS    = 30_000;     // 30s — reload machine list
 const MACHINE_LOCKS       = new Map();  // per-machine serialization
@@ -290,13 +297,16 @@ async function handleMessage(apiKey, payload) {
 
   const ingressLatencyMs = Date.now() - deviceTime * 1000;
 
-  // Drop messages older than 5 minutes — these are broker-replayed stale messages
-  // from when the service was offline. Processing them would corrupt production_hourly
-  // with wrong shift buckets and inflated OEE data.
-  const MAX_STALE_MS = 5 * 60 * 1000;
+  // During the startup replay window (first 10 min after service restart),
+  // allow messages up to 24h old so the broker can replay all QoS-1 messages
+  // that were queued while the service was down. Outside that window, reject
+  // anything older than 5 minutes — those are genuinely stale.
+  const isStartupReplay = (Date.now() - SERVICE_START_MS) < STARTUP_REPLAY_WINDOW_MS;
+  const MAX_STALE_MS    = isStartupReplay ? STARTUP_MAX_STALE_MS : 5 * 60 * 1000;
   if (ingressLatencyMs > MAX_STALE_MS) {
     log('warn', 'dropping stale message',
-      { machine_id: machine.id, latency_ms: ingressLatencyMs, device_time: deviceTime });
+      { machine_id: machine.id, latency_ms: ingressLatencyMs, device_time: deviceTime,
+        startup_replay: isStartupReplay });
     return;
   }
 
@@ -323,25 +333,37 @@ async function handleMessage(apiKey, payload) {
 
   const partsCount = Number(payload.parts_count ?? 0);
 
-  // When Redis has expired (machine offline > 5 min), fall back to the last
-  // telemetry_raw row so parts produced during the gap are not silently dropped.
-  let prevPartsCount = prev?.parts_count ?? null;
+  // When Redis has expired (machine offline > 5 min or server restarted), fall back
+  // to the last telemetry_raw row so parts produced during the gap are not lost.
+  let prevPartsCount  = prev?.parts_count ?? null;
+  let prevReceivedAt  = prev?.received_at ?? null; // epoch seconds from Redis
+  let gapSeconds      = 0;
+
   if (prevPartsCount == null) {
     try {
       const { rows: fallback } = await pool.query(
-        `SELECT parts_count FROM telemetry_raw
+        `SELECT parts_count, EXTRACT(EPOCH FROM received_at)::bigint AS received_epoch
+         FROM telemetry_raw
          WHERE machine_id = $1 AND received_at < to_timestamp($2)
          ORDER BY received_at DESC LIMIT 1`,
         [machine.id, deviceTime]
       );
-      prevPartsCount = fallback[0]?.parts_count ?? null;
+      if (fallback[0]) {
+        prevPartsCount = fallback[0].parts_count;
+        prevReceivedAt = Number(fallback[0].received_epoch);
+      }
     } catch (err) {
       log('warn', 'fallback parts lookup failed', { machine_id: machine.id, error: err.message });
     }
   }
 
+  // Compute gap so partsDelta can relax MAX_PARTS_DELTA for long-downtime recovery
+  if (prevReceivedAt) {
+    gapSeconds = Math.max(0, deviceTime - prevReceivedAt);
+  }
+
   const producedDelta = prevPartsCount != null
-    ? partsDelta(prevPartsCount, partsCount)
+    ? partsDelta(prevPartsCount, partsCount, gapSeconds)
     : 0;
 
   let energyDelta = null;
