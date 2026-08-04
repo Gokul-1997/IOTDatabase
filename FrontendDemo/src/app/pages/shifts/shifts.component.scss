@@ -1,0 +1,13 @@
+// All shared styles are in global styles.scss — only component-specific here.
+
+// Shift-specific badge override
+.badge-time {
+  background: #e8f4fd;
+  color: #1971c2;
+  font-family: monospace;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: inline-block;
+}

@@ -1,0 +1,253 @@
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+
+  <!-- Admin Tab Navigation -->
+  <div class="flex gap-1 mb-6 bg-white dark:bg-gray-800 rounded-xl shadow p-1 w-fit">
+    <a *ngIf="auth.isSntSuper()" routerLink="/admin/companies" routerLinkActive="bg-blue-600 text-white"
+       class="px-5 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+      Companies
+    </a>
+    <a *ngIf="!auth.isSntSuper()" routerLink="/admin/users" routerLinkActive="bg-blue-600 text-white"
+       class="px-5 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+      Users
+    </a>
+    <a *ngIf="!auth.isSntSuper()" routerLink="/admin/roles" routerLinkActive="bg-blue-600 text-white"
+       class="px-5 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+      Roles & Permissions
+    </a>
+  </div>
+
+  <!-- Card -->
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-4">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Roles & Permissions</h1>
+        <p class="text-sm text-gray-500 mt-1">Create roles and assign page access with CRUD actions (View, Create, Edit, Delete)</p>
+      </div>
+      <div class="flex gap-2">
+        <button (click)="seedPages()" [disabled]="seeding"
+          class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 text-sm font-medium">
+          {{ seeding ? 'Syncing...' : 'Sync Pages' }}
+        </button>
+        <button (click)="openCreateModal()"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+          + Create Role
+        </button>
+      </div>
+    </div>
+
+    <!-- Info Banner -->
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-6">
+      <div class="flex items-start gap-2">
+        <svg class="w-4 h-4 text-blue-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <p class="text-sm text-blue-700 dark:text-blue-300">
+          <strong>How it works:</strong> 1) S&amp;T Super User sets which pages a company can access (Companies tab → Manage Access).
+          2) Create a role here. 3) Click "Edit Permissions" to assign View/Create/Edit/Delete per page.
+          4) Go to Users tab → assign the role. Only pages allowed by the company's access will appear.
+        </p>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div *ngIf="loading" class="flex justify-center py-12">
+      <div class="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+    </div>
+
+    <!-- Empty -->
+    <div *ngIf="!loading && roles.length === 0" class="text-center py-12 text-gray-500">
+      <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+      </svg>
+      <p class="font-medium">No roles found</p>
+      <p class="text-sm mt-1">Create your first role to begin managing access</p>
+    </div>
+
+    <!-- Roles Table -->
+    <div *ngIf="!loading && roles.length > 0" class="overflow-x-auto">
+      <table class="w-full border-collapse">
+        <thead>
+          <tr class="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Role</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Access</th>
+            <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide w-56">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+          <tr *ngFor="let role of roles" class="hover:bg-gray-50 dark:hover:bg-gray-750 transition">
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2">
+                <span class="font-semibold text-gray-800 dark:text-white">{{ role.role_name }}</span>
+                <span *ngIf="role.role_name === 'SNT_SUPER'"
+                  class="px-2 py-0.5 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 text-xs rounded-full font-medium">
+                  S&amp;T Super
+                </span>
+                <span *ngIf="role.is_system && role.role_name !== 'SNT_SUPER'"
+                  class="px-2 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-xs rounded-full font-medium">
+                  System
+                </span>
+                <span *ngIf="role.company_name"
+                  class="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-xs rounded-full font-medium">
+                  {{ role.company_name }}
+                </span>
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              <span *ngIf="role.role_name === 'SNT_SUPER'" class="text-sm text-red-600 dark:text-red-400 font-medium">
+                All pages (full access)
+              </span>
+              <div *ngIf="role.role_name !== 'SNT_SUPER'">
+                <span *ngIf="getPageCount(role) === 0" class="text-sm text-red-400 italic">No access assigned</span>
+                <div *ngIf="getPageCount(role) > 0" class="flex items-center gap-2">
+                  <span class="text-xs font-semibold px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-full">
+                    {{ getPageCount(role) }} pages
+                  </span>
+                  <span class="text-xs text-gray-400">
+                    ({{ getActionCount(role) }} actions)
+                  </span>
+                  <span class="text-sm text-gray-600 dark:text-gray-400 truncate max-w-xs">{{ getPageNames(role) }}</span>
+                </div>
+              </div>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <div class="flex items-center justify-center gap-2">
+                <button *ngIf="role.role_name !== 'SNT_SUPER'"
+                  (click)="openPagesModal(role)"
+                  class="px-3 py-1.5 bg-blue-500 text-white text-xs rounded-lg hover:bg-blue-600 font-medium">
+                  Edit Permissions
+                </button>
+                <button (click)="deleteRole(role)"
+                  [disabled]="role.is_system"
+                  class="px-3 py-1.5 bg-red-500 text-white text-xs rounded-lg hover:bg-red-600 font-medium disabled:opacity-30 disabled:cursor-not-allowed">
+                  Delete
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────── CREATE ROLE MODAL ──────────────── -->
+<div *ngIf="showCreateModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+      <h2 class="text-xl font-bold text-gray-800 dark:text-white">Create New Role</h2>
+      <button (click)="closeCreateModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="p-6">
+      <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Role Name *</label>
+      <input [(ngModel)]="createForm.role_name" type="text"
+        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+        placeholder="e.g., SUPERVISOR, OPERATOR, VIEWER">
+      <p class="text-xs text-gray-400 mt-1.5">Use uppercase names like SUPERVISOR, OPERATOR</p>
+    </div>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+      <button (click)="closeCreateModal()"
+        class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+        Cancel
+      </button>
+      <button (click)="createRole()" [disabled]="loading"
+        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+        {{ loading ? 'Creating...' : 'Create Role' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────── PERMISSION ASSIGNMENT MODAL ──────────────── -->
+<div *ngIf="showPagesModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
+      <div>
+        <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+          Permissions: <span class="text-blue-600">{{ selectedRole?.role_name }}</span>
+        </h2>
+        <p class="text-sm text-gray-500 mt-0.5">Select which pages and actions (View / Create / Edit / Delete) this role can perform</p>
+      </div>
+      <button (click)="closePagesModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Empty -->
+    <div *ngIf="permissionModules.length === 0" class="text-center py-12 text-gray-500 px-6">
+      <p>No permissions available.</p>
+      <p class="text-sm mt-1">Click <strong>"Sync Pages"</strong> first, then ensure the company has page access assigned.</p>
+    </div>
+
+    <!-- Scrollable body -->
+    <div *ngIf="permissionModules.length > 0" class="overflow-y-auto flex-1 p-6">
+      <div *ngFor="let group of permissionGroups" class="mb-6">
+        <!-- Group Header -->
+        <div class="flex items-center gap-2 mb-3 pb-2 border-b-2 border-gray-200 dark:border-gray-600">
+          <input type="checkbox"
+            [checked]="isGroupAllSelected(group)"
+            [indeterminate]="isGroupPartial(group)"
+            (change)="toggleGroup(group)"
+            class="w-4 h-4 accent-blue-600 cursor-pointer">
+          <span class="font-bold text-gray-700 dark:text-gray-200 text-sm uppercase tracking-wider">{{ group }}</span>
+          <span class="text-xs text-gray-400 ml-auto">Select All</span>
+        </div>
+
+        <!-- Modules -->
+        <div class="space-y-3">
+          <div *ngFor="let mod of getModulesByGroup(group)"
+            class="border border-gray-200 dark:border-gray-600 rounded-lg p-3">
+            <!-- Module header -->
+            <div class="flex items-center gap-2 mb-2">
+              <input type="checkbox"
+                [checked]="isModuleAllSelected(mod)"
+                [indeterminate]="isModulePartial(mod)"
+                (change)="toggleModule(mod)"
+                class="w-4 h-4 accent-blue-600 cursor-pointer">
+              <span class="font-semibold text-gray-700 dark:text-gray-200 text-sm">{{ mod.label }}</span>
+            </div>
+            <!-- Action checkboxes -->
+            <div class="flex flex-wrap gap-2 ml-6">
+              <label *ngFor="let perm of mod.permissions"
+                class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition text-sm"
+                [ngClass]="isPermSelected(perm.id)
+                  ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                  : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-blue-200'">
+                <input type="checkbox"
+                  [checked]="isPermSelected(perm.id)"
+                  (change)="togglePerm(perm.id)"
+                  class="w-3.5 h-3.5 accent-blue-600 cursor-pointer">
+                <span class="font-medium">{{ perm.actionLabel || perm.action }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="flex items-center justify-between px-6 py-4 border-t border-gray-100 dark:border-gray-700 shrink-0">
+      <span class="text-sm text-gray-500">
+        {{ selectedPermIds.size }} permission(s) selected
+      </span>
+      <div class="flex gap-3">
+        <button (click)="closePagesModal()"
+          class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+          Cancel
+        </button>
+        <button (click)="savePageAccess()" [disabled]="loading"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+          {{ loading ? 'Saving...' : 'Save Permissions' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,158 @@
+<div class="page-wrapper">
+
+  <!-- HEADER -->
+   <div class="bg-top-bar flex-wrap">
+    <div class="toolbar-left">
+      <h2 class="text-xl font-ubuntu font-bold text-white">Charts</h2>
+    </div>
+
+    
+
+    <div class="toolbar-right">
+      <div class="flex flex-wrap items-end gap-4 w-full justify-center md:justify-end">
+
+        <!-- Machine -->
+        <div class="flex flex-col md:flex-row gap-2 items-center">
+          <label class="text-sm font-medium text-white">Machine</label>
+          <select [(ngModel)]="selectedMachine"
+            class="filter-select">
+            <option [ngValue]="null">All Machines</option>
+            <option *ngFor="let m of machines" [ngValue]="m.id">
+              {{ m.machine_serial_no }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Shift -->
+        <div class="flex flex-col md:flex-row gap-2 items-center">
+          <label class="text-sm font-medium text-white">Shift</label>
+          <select [(ngModel)]="selectedShift"
+            class="filter-select">
+            <option [ngValue]="null">All Shifts</option>
+            <option *ngFor="let s of shifts" [ngValue]="s.id">
+              {{ s.shift_name || s.shift_code }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Date -->
+        <div class="flex flex-col md:flex-row gap-2 items-center">
+          <label class="text-sm font-medium text-white">Date</label>
+          <input type="date" [(ngModel)]="selectedDate" [max]="today"
+            class="filter-date" />
+        </div>
+
+        <!-- Submit -->
+        <button (click)="submit()"
+          class="btn-primary">
+          Submit
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7"/>
+          </svg>
+        </button>
+
+      </div>
+    </div>
+    
+  </div>
+
+
+
+  <!-- ── BODY ─────────────────────────────────────────────────────────────── -->
+  <div class="space-y-4">
+
+    <!-- Per-Part Running vs Idle (Stacked Bar) — controlled by widget:partwise-chart -->
+    <div *ngIf="auth.hasWidget('charts', 'partwise-chart')" class="bg-common">
+
+      <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+        <div>
+          <p class="font-semibold text-base">Part-Wise Running vs Idle Time</p>
+          <p class="text-xs text-gray-500 mt-0.5">Each bar = one part produced — green: machining time, red: idle time before next part</p>
+        </div>
+        <div class="flex items-center gap-4 flex-wrap">
+          <p class="text-sm text-gray-500">
+            Total Parts: <span class="font-bold text-gray-800 dark:text-white">{{ totalProduced }}</span> pcs
+          </p>
+          <p *ngIf="partDataLoaded" class="text-sm text-gray-500">
+            Total Run: <span class="font-bold text-green-600">{{ totalRunMin | number:'1.0-0' }} min</span>
+          </p>
+          <p *ngIf="partDataLoaded" class="text-sm text-gray-500">
+            Total Idle: <span class="font-bold text-red-500">{{ totalIdleMin | number:'1.0-0' }} min</span>
+          </p>
+        </div>
+      </div>
+
+      <div *ngIf="loadingParts" class="flex justify-center py-16">
+        <div class="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
+      </div>
+
+      <div *ngIf="!loadingParts && !partDataLoaded"
+           class="py-16 text-center text-gray-400">
+        Select a machine to see per-part timing.
+      </div>
+
+      <div *ngIf="!loadingParts && partDataLoaded && partSeries[0]?.data?.length === 0"
+           class="py-16 text-center text-gray-400">
+        No part data found for the selected filters.
+      </div>
+
+      <div *ngIf="!loadingParts && partDataLoaded && partSeries[0]?.data?.length > 0"
+           style="overflow-x: auto; overflow-y: hidden;">
+        <div [style.min-width]="partChartWidth">
+          <apx-chart
+            [series]="partSeries"
+            [chart]="partChartOptions.chart"
+            [plotOptions]="partChartOptions.plotOptions"
+            [xaxis]="{ categories: partCategories }"
+            [yaxis]="partChartOptions.yaxis"
+            [legend]="partChartOptions.legend"
+            [fill]="partChartOptions.fill"
+            [dataLabels]="partChartOptions.dataLabels"
+            [tooltip]="partChartOptions.tooltip"
+            [colors]="partChartOptions.colors">
+          </apx-chart>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hourly Part Count (Line Chart) — controlled by widget:hourly-chart -->
+    <div *ngIf="auth.hasWidget('charts', 'hourly-chart')" class="bg-common">
+
+      <div class="flex justify-between items-center mb-2">
+        <p class="font-semibold text-base">Hour Wise Part Count</p>
+        <p class="text-sm text-gray-500">
+          Produced today: <span class="font-bold text-gray-800 dark:text-white">{{ totalProduced }}</span> pcs
+        </p>
+      </div>
+
+      <div *ngIf="loadingHourly" class="flex justify-center py-10">
+        <div class="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
+      </div>
+
+      <div *ngIf="!loadingHourly && !hourlyDataLoaded"
+           class="py-16 text-center text-gray-400">
+        Select a machine to see hourly production data.
+      </div>
+
+      <div *ngIf="!loadingHourly && hourlyDataLoaded && hourlyCategories.length === 0"
+           class="py-16 text-center text-gray-400">
+        No hourly data found for the selected filters.
+      </div>
+
+      <apx-chart *ngIf="!loadingHourly && hourlyDataLoaded && hourlyCategories.length > 0"
+        [series]="hourlySeries"
+        [chart]="hourlyChartOptions.chart"
+        [colors]="hourlyChartOptions.colors"
+        [dataLabels]="hourlyChartOptions.dataLabels"
+        [stroke]="hourlyChartOptions.stroke"
+        [grid]="hourlyChartOptions.grid"
+        [markers]="hourlyChartOptions.markers"
+        [xaxis]="{ type: 'category', categories: hourlyCategories }"
+        [yaxis]="hourlyChartOptions.yaxis"
+        [legend]="hourlyChartOptions.legend"
+        [tooltip]="hourlyChartOptions.tooltip">
+      </apx-chart>
+    </div>
+
+  </div>
+</div>

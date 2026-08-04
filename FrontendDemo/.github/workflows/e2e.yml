@@ -1,0 +1,26 @@
+name: Frontend E2E (manual)
+
+# Run on demand only — needs a live backend or stubbed routes set up
+# in the test (the existing specs stub /api/* via page.route()).
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run e2e:install
+      - run: npm run e2e
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

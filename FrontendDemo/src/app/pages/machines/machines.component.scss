@@ -1,0 +1,404 @@
+// ── PAGE LAYOUT ────────────────────────────────────────────────────────────
+.machines-page {
+  padding: 24px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+// ── TOOLBAR ────────────────────────────────────────────────────────────────
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+
+
+// ── SEARCH ─────────────────────────────────────────────────────────────────
+.search-box {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  padding: 0 10px;
+  gap: 6px;
+  // height: 42px;
+  min-width: 260px;
+  transition: border-color 0.2s;
+
+
+  &:focus-within,
+  &:focus {
+    border-color: #3b5bdb;
+    // border-width: 2px;
+    // box-shadow: 0 0 0 3px rgba(59, 91, 219, 0.1);
+
+    outline-color: #4f46e5;
+    // outline-offset: -2px;
+    outline-width: 2px;
+  }
+
+  .search-icon {
+    color: #adb5bd;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  .search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 0.875rem;
+    background: transparent;
+    color: #212529;
+
+    &::placeholder {
+      color: #adb5bd;
+    }
+  }
+
+  
+
+  .clear-btn {
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+
+    mat-icon {
+      font-size: 16px;
+    }
+  }
+}
+.search-box:focus{
+  outline-color: #4f46e5;
+  outline-width: 2px;
+}
+.focus\:outline-indigo-600:focus {
+    outline-color: #4f46e5;
+}
+.focus\:-outline-offset-2:focus {
+    outline-offset: -2px;
+}
+.focus\:outline-2:focus {
+    outline-width: 2px;
+}
+
+// ── BUTTONS ────────────────────────────────────────────────────────────────
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #2b3990;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0 20px;
+  height: 42px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+
+  mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
+  &:hover {
+    background: #2f4ac4;
+    box-shadow: 0 4px 12px rgba(59, 91, 219, 0.35);
+  }
+}
+
+// ── TABLE CARD ─────────────────────────────────────────────────────────────
+.table-card {
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  
+}
+
+
+
+// ── BADGES ─────────────────────────────────────────────────────────────────
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.badge-line {
+  background: #e8f0fe;
+  color: #3b5bdb;
+}
+
+.badge-yes {
+  background: #d3f9d8;
+  color: #2b8a3e;
+}
+
+.badge-no {
+  background: #fff0f6;
+  color: #c92a2a;
+}
+
+// ── ACTION BUTTONS ─────────────────────────────────────────────────────────
+.action-edit {
+  color: #3b5bdb !important;
+
+  &:hover {
+    background: #e8f0fe !important;
+  }
+}
+
+.action-delete {
+  color: #e03131 !important;
+
+  &:hover {
+    background: #fff0f0 !important;
+  }
+}
+
+// ── EMPTY STATE ────────────────────────────────────────────────────────────
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #adb5bd;
+  gap: 8px;
+
+  mat-icon {
+    font-size: 56px;
+    width: 56px;
+    height: 56px;
+    opacity: 0.35;
+  }
+
+  p {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #6c757d;
+  }
+
+  span {
+    font-size: 0.82rem;
+  }
+}
+
+// ── MODAL BACKDROP ─────────────────────────────────────────────────────────
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.delete-modal {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 28px;
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+
+  .delete-icon-wrap {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #fff5f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    mat-icon {
+      color: #e03131;
+      font-size: 32px;
+      width: 32px;
+      height: 32px;
+    }
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #212529;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #6c757d;
+    line-height: 1.6;
+  }
+}
+
+.error-banner {
+  width: 100%;
+  background: #fff0f0;
+  border: 1px solid #ffc9c9;
+  color: #c92a2a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.btn-cancel {
+  flex: 1;
+  height: 42px;
+  border-radius: 10px;
+  border: 1.5px solid #dee2e6;
+  background: #fff;
+  color: #495057;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover:not(:disabled) { background: #f1f3f5; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.btn-danger {
+  flex: 1;
+  height: 42px;
+  border-radius: 10px;
+  border: none;
+  background: #e03131;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s;
+
+  mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
+  &:hover:not(:disabled) { background: #c92a2a; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+// ── API KEY CELL ───────────────────────────────────────────────────────────
+.api-key-td {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  &:hover .copy-btn {
+    opacity: 1;
+  }
+}
+
+.api-key-cell {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  background: #f0f2f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #495057;
+  letter-spacing: 0.5px;
+}
+
+.copy-btn {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  color: #3b5bdb !important;
+  font-size: 16px !important;
+  width: 28px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+
+  &:hover {
+    background: #e8f0fe !important;
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+// ── DARK MODE ──────────────────────────────────────────────────────────────
+:host-context(.dark) {
+  .page-title h2 { color: #f1f3f5; }
+
+
+
+  .table-card { background: #12203a; }
+
+  .machines-table {
+    .mat-mdc-header-row { background: #0f1c33; border-bottom-color: #1e2d45; }
+    .mat-mdc-header-cell { color: #cbcbcb; }
+    .mat-mdc-row.data-row:hover { background: #1a2d48; }
+    .mat-mdc-cell { color: #cbcbcb; }
+  }
+
+  .api-key-cell {
+    background: #1e3a5f;
+    color: #aec5e0;
+  }
+
+  .copy-btn {
+    color: #6b9cde !important;
+
+    &:hover {
+      background: #1e3a5f !important;
+    }
+  }
+
+  .delete-modal { background: #12203a; h3 { color: #f1f3f5; } }
+}

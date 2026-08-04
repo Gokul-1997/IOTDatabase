@@ -1,0 +1,24 @@
+select {
+  padding: 8px;
+  width: 300px;
+  margin-bottom: 15px;
+}
+
+.shift-list {
+  background: #fff;
+  padding: 15px;
+  border-radius: 4px;
+
+  div {
+    margin-bottom: 8px;
+  }
+
+  button {
+    margin-top: 15px;
+    padding: 10px;
+    background: #389e0d;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+}
