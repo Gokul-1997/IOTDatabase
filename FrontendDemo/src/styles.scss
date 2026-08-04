@@ -1241,3 +1241,177 @@ html.dark {
 .op-modal .text-sm {
     white-space: nowrap;
 }
+/* ════════════════════════════════════════════════════════════════
+   DHARSTEC CONTROL-ROOM UI
+   Premium machine-monitoring surface. Deep-navy instrument panels
+   with a status rail, tabular numeric readouts and glow accents.
+   ════════════════════════════════════════════════════════════════ */
+
+.ctl-shell {
+  min-height: 100vh;
+  padding: 18px 16px 32px;
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(76,73,160,.20), transparent 60%),
+    radial-gradient(900px 500px at 110% 10%, rgba(31,29,81,.35), transparent 55%),
+    #0B0C15;
+}
+@media (min-width: 1280px) { .ctl-shell { padding: 22px 28px 40px; } }
+
+/* ── Command bar ─────────────────────────────────────────────── */
+.ctl-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+  justify-content: space-between;
+  padding: 14px 18px; margin-bottom: 18px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border: 1px solid rgba(255,255,255,.08);
+  backdrop-filter: blur(12px);
+}
+.ctl-title  { font-size: 1.15rem; font-weight: 700; color: #fff; letter-spacing: -.01em; }
+.ctl-sub    { font-size: .7rem; text-transform: uppercase; letter-spacing: .14em; color: #6F6DA8; margin-top: 2px; }
+.ctl-meta   { display: flex; align-items: center; gap: 8px; color: #B9B8D9; font-size: .8rem; }
+.ctl-meta b { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ctl-divider{ width: 1px; height: 22px; background: rgba(255,255,255,.12); }
+
+/* Status filter chips */
+.ctl-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 14px; border-radius: 10px;
+  font-size: .78rem; font-weight: 600; letter-spacing: .02em;
+  color: #B9B8D9;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.09);
+  transition: all .18s ease;
+  &:hover { background: rgba(255,255,255,.1); color: #fff; }
+  b { font-variant-numeric: tabular-nums; font-size: .95rem; color: #fff; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; }
+}
+.ctl-chip--on   { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); color: #fff; }
+.ctl-chip .dot--all  { background: #8E8CC7; }
+.ctl-chip .dot--run  { background: #22C55E; box-shadow: 0 0 8px rgba(34,197,94,.9); }
+.ctl-chip .dot--idle { background: #F5B301; box-shadow: 0 0 8px rgba(245,179,1,.9); }
+.ctl-chip .dot--alm  { background: #FF4D5E; box-shadow: 0 0 8px rgba(255,77,94,.9); }
+
+/* ── Machine panel ───────────────────────────────────────────── */
+.mpanel {
+  position: relative; overflow: hidden;
+  border-radius: 18px; padding: 16px 16px 14px 20px;
+  background: linear-gradient(160deg, #191A2E 0%, #14152400 60%), #141523;
+  border: 1px solid rgba(255,255,255,.07);
+  box-shadow: 0 10px 30px -12px rgba(0,0,0,.7);
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+
+  /* status rail */
+  &::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: #3A3B57;
+  }
+  &:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255,255,255,.16);
+    box-shadow: 0 18px 40px -14px rgba(0,0,0,.85);
+  }
+}
+.mpanel--run  { &::before { background: #22C55E; box-shadow: 0 0 18px rgba(34,197,94,.75); } }
+.mpanel--idle { &::before { background: #F5B301; box-shadow: 0 0 18px rgba(245,179,1,.75); } }
+.mpanel--off  { &::before { background: #4B4C6B; } opacity: .72; }
+.mpanel--alarm {
+  &::before { background: #FF4D5E; box-shadow: 0 0 18px rgba(255,77,94,.85); }
+  border-color: rgba(255,77,94,.35);
+  animation: alarmPulse 1.6s ease-in-out infinite;
+}
+@keyframes alarmPulse {
+  0%,100% { box-shadow: 0 10px 30px -12px rgba(0,0,0,.7), 0 0 0 0 rgba(255,77,94,.35); }
+  50%     { box-shadow: 0 10px 30px -12px rgba(0,0,0,.7), 0 0 0 6px rgba(255,77,94,0); }
+}
+
+.mpanel__id    { font-size: 1.05rem; font-weight: 700; color: #fff; letter-spacing: .02em; }
+.mpanel__model { font-size: .68rem; color: #6F6DA8; text-transform: uppercase; letter-spacing: .1em; margin-top: 1px; }
+
+.mstate {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: .64rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  .dot { width: 6px; height: 6px; border-radius: 50%; animation: statePulse 2s ease-in-out infinite; }
+}
+@keyframes statePulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.mstate--run  { background: rgba(34,197,94,.14);  color: #4ADE80; .dot { background: #22C55E } }
+.mstate--idle { background: rgba(245,179,1,.14);  color: #FBBF24; .dot { background: #F5B301 } }
+.mstate--off  { background: rgba(255,255,255,.07); color: #8E8CC7; .dot { background: #6F6DA8; animation: none } }
+.mstate--alarm{ background: rgba(255,77,94,.16);  color: #FF8189; .dot { background: #FF4D5E } }
+
+.mpanel__thumb {
+  width: 92px; height: 72px; flex-shrink: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,.55));
+}
+
+.mfield__k { font-size: .64rem; text-transform: uppercase; letter-spacing: .1em; color: #6F6DA8; }
+.mfield__v { font-size: .84rem; font-weight: 600; color: #E7E7F5; margin-top: 1px; }
+
+/* metric strip */
+.mstrip {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; margin-top: 14px;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 12px; overflow: hidden;
+}
+.mcell {
+  background: #12132200; padding: 9px 10px; text-align: center;
+  background-color: rgba(11,12,21,.55);
+}
+.mcell__k { font-size: .6rem; text-transform: uppercase; letter-spacing: .1em; color: #6F6DA8; }
+.mcell__v {
+  font-size: 1.02rem; font-weight: 700; color: #fff; margin-top: 2px;
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+.mcell__v--run  { color: #4ADE80; }
+.mcell__v--idle { color: #FBBF24; }
+
+/* production progress */
+.mprog__track {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: rgba(255,255,255,.08);
+}
+.mprog__fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #6663B8, #22C55E);
+  transition: width .6s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Instrument card (live page) ─────────────────────────────── */
+.icard {
+  border-radius: 18px; padding: 16px;
+  background: linear-gradient(160deg, #191A2E 0%, rgba(20,21,35,0) 65%), #141523;
+  border: 1px solid rgba(255,255,255,.07);
+  box-shadow: 0 10px 30px -14px rgba(0,0,0,.7);
+}
+.icard__h {
+  font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .14em;
+  color: #6F6DA8; margin-bottom: 12px;
+}
+.ipill {
+  background: rgba(11,12,21,.55);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 12px; padding: 10px 12px;
+}
+.ipill__k { font-size: .62rem; text-transform: uppercase; letter-spacing: .1em; color: #6F6DA8; }
+.ipill__v { font-size: .95rem; font-weight: 700; color: #fff; margin-top: 2px; }
+
+.ibig { font-size: 1.5rem; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+/* apex charts sit on dark panels here */
+.icard .apexcharts-text,
+.icard .apexcharts-datalabel-label { fill: #8E8CC7 !important; }
+
+/* Status rail also works when the modifier is applied to an .icard */
+.icard.mpanel--run,
+.icard.mpanel--idle,
+.icard.mpanel--off,
+.icard.mpanel--alarm {
+  &::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  }
+}

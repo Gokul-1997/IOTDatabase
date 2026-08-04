@@ -471,13 +471,13 @@ export class LiveComponent implements OnInit, OnDestroy {
           startAngle: -135,
           endAngle:    135,
           hollow: { size: '58%' },
-          track: { background: '#e8eaf0', strokeWidth: '97%' },
+          track: { background: 'rgba(255,255,255,.08)', strokeWidth: '97%' },
           dataLabels: {
             name: {
               show: true,
               offsetY: 18,
-              fontSize: '11px',
-              color: '#6b7280',
+              fontSize: '10px',
+              color: '#6F6DA8',
               fontFamily: 'inherit'
             },
             value: {
@@ -485,19 +485,19 @@ export class LiveComponent implements OnInit, OnDestroy {
               offsetY: -15,
               fontSize: '24px',
               fontWeight: '700',
-              color: '#3B4CCA',
+              color: '#ffffff',
               fontFamily: 'inherit',
               formatter: (val: number) => val + '%'
             }
           }
         }
       },
-      colors: ['#3B4CCA'],
+      colors: ['#6663B8'],
       fill: {
         type: 'gradient',
         gradient: {
           shade: 'dark', type: 'horizontal',
-          gradientToColors: ['#4C49A0'], stops: [0, 100]
+          gradientToColors: ['#22C55E'], stops: [0, 100]
         }
       }
     };
@@ -513,9 +513,9 @@ export class LiveComponent implements OnInit, OnDestroy {
           hollow: { size: '42%' },
           track: {
             show: true,
-            background: '#E0E0E0', // background: isDark ? '#1f2937' : '#e5e7eb',
+            background: 'rgba(255,255,255,.08)',
             strokeWidth: '100%',
-            opacity: 0.5,
+            opacity: 1,
             margin: 0
           },
           dataLabels: {
@@ -525,7 +525,7 @@ export class LiveComponent implements OnInit, OnDestroy {
         }
       },
       dataLabels: { enabled: false },
-      fill:   { type: 'solid', colors: ['#3B4CCA'] },
+      fill:   { type: 'solid', colors: ['#6663B8'] },
       stroke: { dashArray: 4 }
     };
 
@@ -533,11 +533,11 @@ export class LiveComponent implements OnInit, OnDestroy {
     
     /* ── Time Pie ── */
     this.timePieChart = {
-  chart: { type: 'pie', height: 180 },
+  chart: { type: 'pie', height: 170 },
   labels: ['Running', 'Idle'],
-  colors: ['#0CAD5D', '#dfb400'],
+  colors: ['#22C55E', '#F5B301'],
   legend: { show: false },
-  stroke: { width: 1 },
+  stroke: { width: 2, colors: ['#141523'] },
   dataLabels: {
     minAngleToShowLabel: 15,
     formatter: (v: any) => `${v.toFixed(1)}%`,
