@@ -71,7 +71,7 @@
       </div>
 
       <!-- body: thumb + fields + utilisation ring -->
-      <div class="flex items-center gap-3 mt-3">
+      <div class="flex items-center gap-3.5 mt-3.5">
 
         <img [src]="m.image_url" class="mpanel__thumb" alt="" />
 
@@ -88,23 +88,23 @@
         </div>
 
         <!-- utilisation reads as the card's headline KPI -->
-        <div *ngIf="auth.hasWidget('dashboard', 'utilization')" class="relative shrink-0" style="width:62px; height:62px">
+        <div *ngIf="auth.hasWidget('dashboard', 'utilization')" class="relative shrink-0" style="width:74px; height:74px">
           <svg viewBox="0 0 62 62" class="w-full h-full -rotate-90">
             <defs>
               <linearGradient [attr.id]="'utilG' + m.machine_id" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0" stop-color="#6663B8"/><stop offset="1" stop-color="#22C55E"/>
               </linearGradient>
             </defs>
-            <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" class="ring-track" stroke-width="7"/>
-            <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" stroke-width="7"
+            <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" class="ring-track" stroke-width="6"/>
+            <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" stroke-width="6"
                     [attr.stroke]="'url(#utilG' + m.machine_id + ')'"
                     [attr.stroke-linecap]="utilCap(m.utilization)"
                     [attr.stroke-dasharray]="utilDash(m.utilization)"/>
           </svg>
           <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span class="text-[.82rem] font-bold leading-none"
+            <span class="text-[.95rem] font-bold leading-none"
                   style="color:var(--cs-txt); font-variant-numeric:tabular-nums">{{ m.utilization || 0 | number:'1.0-0' }}%</span>
-            <span class="text-[.44rem] uppercase tracking-[.12em] mt-0.5" style="color:var(--cs-txt-3)">Util</span>
+            <span class="text-[.48rem] uppercase tracking-[.12em] mt-0.5" style="color:var(--cs-txt-3)">Util</span>
           </div>
         </div>
       </div>

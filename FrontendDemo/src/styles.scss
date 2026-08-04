@@ -1405,7 +1405,8 @@ html.dark {
 }
 
 .mpanel__thumb {
-  width: 96px; height: 74px; flex-shrink: 0; object-fit: contain;
+  width: 72px; height: 60px; flex-shrink: 0; object-fit: contain;
+  opacity: .92;
 }
 .dark .mpanel__thumb { filter: drop-shadow(0 6px 12px rgba(0,0,0,.55)); }
 
@@ -1788,6 +1789,10 @@ html.dark {
   font-size: .7rem; color: var(--cs-txt-2);
 }
 .loadkey__sw { width: 14px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+/* the tone colours are shared by the column segments and the key swatches */
+.loadkey__sw.tone-green { background: #22C55E; }
+.loadkey__sw.tone-amber { background: #F5B301; }
+.loadkey__sw.tone-red   { background: #FF4D5E; }
 
 /* ── Feed override: linear scale ─────────────────────────────── */
 .fscale { margin-top: 18px; }
@@ -1845,3 +1850,17 @@ html.dark {
 .kpi--avail { &::before { background: #22C55E } svg { color: #22C55E } }
 .kpi--perf  { &::before { background: #60A5FA } svg { color: #60A5FA } }
 .kpi--qual  { &::before { background: #A855F7 } svg { color: #A855F7 } }
+
+/* full-width legend rows — key left, value right, so narrow cards
+   fill their width instead of leaving a gutter */
+.oee-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 10px; border-radius: 9px;
+  background: var(--cs-inset);
+  border: 1px solid var(--cs-border);
+}
+.oee-row__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.oee-row__k   { font-size: .72rem; color: var(--cs-txt-2); flex: 1; }
+.oee-row__v   { font-size: .8rem; font-weight: 700; color: var(--cs-txt); }
+
+.loadkey b { font-weight: 700; }
