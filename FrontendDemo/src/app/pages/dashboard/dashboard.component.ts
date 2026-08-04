@@ -457,6 +457,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   /* ════════════════════════════════════════
+     UTILISATION RING (per card)
+  ════════════════════════════════════════ */
+  readonly UTIL_R = 26;
+
+  /** stroke-dasharray for the card's utilisation ring */
+  utilDash(pct: any): string {
+    const c = 2 * Math.PI * this.UTIL_R;
+    const v = Math.max(0, Math.min(100, Number(pct) || 0));
+    return `${(v / 100) * c} ${c}`;
+  }
+
+  /** A round cap on a zero-length arc still paints a dot — square it off. */
+  utilCap(pct: any): string { return (Number(pct) || 0) > 0 ? 'round' : 'butt'; }
+
+  /* ════════════════════════════════════════
      DESTROY
   ════════════════════════════════════════ */
   ngOnDestroy(): void {
