@@ -430,6 +430,42 @@ export class LiveComponent implements OnInit, OnDestroy {
   /** A round cap on a zero-length arc still paints a dot — square it off. */
   ringCap(pct: any): string { return (Number(pct) || 0) > 0 ? 'round' : 'butt'; }
 
+  /* ── Time-split donut ─────────────────────────────────────── */
+  readonly DONUT_R = 52;
+  get donutC(): number { return 2 * Math.PI * this.DONUT_R; }
+  get donutRunDash():  string { return `${this.donutC * this.runPct  / 100} ${this.donutC}`; }
+  get donutIdleDash(): string { return `${this.donutC * this.idlePct / 100} ${this.donutC}`; }
+  /** idle arc starts where the run arc ended */
+  get donutIdleOffset(): number { return -this.donutC * this.runPct / 100; }
+
+  /* ── Spindle load column ──────────────────────────────────────
+     A stack of lit segments, the way a machine-tool load meter on the
+     controller itself reads — not a dial. */
+  readonly SPINDLE_SEGMENTS = 16;
+  get spindlePct(): number { return Number(this.spindleSeries?.[0] ?? 0); }
+
+  get spindleBars(): { on: boolean; tone: string }[] {
+    const pct = this.spindlePct;
+    return Array.from({ length: this.SPINDLE_SEGMENTS }, (_, i) => {
+      // segment 0 is the bottom of the column
+      const threshold = ((i + 1) / this.SPINDLE_SEGMENTS) * 100;
+      const share = (i / this.SPINDLE_SEGMENTS) * 100;
+      return {
+        on: pct >= threshold - (100 / this.SPINDLE_SEGMENTS) / 2,
+        tone: share >= 85 ? 'red' : share >= 60 ? 'amber' : 'green',
+      };
+    }).reverse();   // render top-down
+  }
+
+  /* ── Feed override scale ──────────────────────────────────────
+     Override is a linear 0–150 % of nominal, so it reads better as a
+     scale with a 100 % reference than as a second dial. */
+  get feedOverridePct(): number {
+    return Math.min(150, (Number(this.liveFeed) || 0) / FEED_MAX * 100);
+  }
+  /** position on the 0–150 % track, as a percentage of track width */
+  get feedTrackPos(): number { return (this.feedOverridePct / 150) * 100; }
+
   private timeToSec(t: string): number {
     if (!t) return 0;
     const p = t.split(':').map(Number);

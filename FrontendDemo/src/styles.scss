@@ -1765,3 +1765,58 @@ html.dark {
 /* machine artwork: shadow only reads well on the dark surface */
 .machine-art { filter: none; }
 .dark .machine-art { filter: drop-shadow(0 10px 24px rgba(0,0,0,.6)); }
+
+/* ── Spindle load: lit-segment column ────────────────────────── */
+.loadcol {
+  display: flex; flex-direction: column; gap: 4px;
+  width: 46px; flex-shrink: 0;
+  padding: 8px; border-radius: 12px;
+  background: var(--cs-inset);
+  border: 1px solid var(--cs-border);
+}
+.loadcol__seg {
+  height: 9px; border-radius: 3px;
+  background: var(--cs-track);
+  transition: background .25s ease, box-shadow .25s ease;
+}
+.loadcol__seg.on.tone-green { background: #22C55E; box-shadow: 0 0 8px rgba(34,197,94,.5); }
+.loadcol__seg.on.tone-amber { background: #F5B301; box-shadow: 0 0 8px rgba(245,179,1,.5); }
+.loadcol__seg.on.tone-red   { background: #FF4D5E; box-shadow: 0 0 8px rgba(255,77,94,.55); }
+
+.loadkey {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .7rem; color: var(--cs-txt-2);
+}
+.loadkey__sw { width: 14px; height: 7px; border-radius: 3px; flex-shrink: 0; }
+
+/* ── Feed override: linear scale ─────────────────────────────── */
+.fscale { margin-top: 18px; }
+.fscale__track {
+  position: relative; height: 14px; border-radius: 999px;
+  background: var(--cs-track); overflow: visible;
+}
+.fscale__fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #4C49A0, #6663B8);
+  transition: width .5s cubic-bezier(.4,0,.2,1);
+}
+/* 100% of nominal sits at two thirds of a 0–150 track */
+.fscale__ref {
+  position: absolute; top: -5px; bottom: -5px; left: 66.667%;
+  width: 2px; background: #FF8189; border-radius: 2px;
+}
+.fscale__marker {
+  position: absolute; top: 50%; width: 14px; height: 14px;
+  margin-left: -7px; border-radius: 50%;
+  background: var(--cs-panel);
+  border: 3px solid #6663B8;
+  transform: translateY(-50%);
+  box-shadow: var(--cs-shadow);
+  transition: left .5s cubic-bezier(.4,0,.2,1);
+}
+.fscale__ticks {
+  display: flex; justify-content: space-between;
+  margin-top: 8px; font-size: .62rem; color: var(--cs-txt-3);
+  font-variant-numeric: tabular-nums;
+}
+.fscale__ticks .is-ref { color: #FF8189; font-weight: 700; }
