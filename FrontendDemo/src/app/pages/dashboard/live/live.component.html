@@ -221,27 +221,44 @@
     <div *ngIf="auth.hasWidget('dashboard:live', 'spindle-speed-chart')" class="icard flex flex-col">
       <div class="icard__h">Spindle Load</div>
 
-      <div class="flex items-stretch gap-5 flex-1">
-
-        <div class="loadcol">
-          <div *ngFor="let seg of spindleBars"
-               class="loadcol__seg" [class.on]="seg.on" [ngClass]="'tone-' + seg.tone"></div>
-        </div>
-
-        <div class="flex-1 min-w-0 flex flex-col">
+      <div class="flex items-baseline justify-between gap-3">
+        <div class="flex items-baseline gap-3">
           <div class="ibig" style="font-size:2.5rem; line-height:1">
             {{ spindlePct | number:'1.0-0' }}<span class="text-xl">%</span>
           </div>
-          <div class="ipill__k mt-1">Current load</div>
+          <div class="ipill__k">current load</div>
+        </div>
+        <div class="text-right">
+          <div class="ipill__k">Rated max</div>
+          <div class="ipill__v">{{ SPINDLE_MAX }}%</div>
+        </div>
+      </div>
 
-          <div class="mt-auto space-y-1.5 pt-4">
-            <div class="loadkey"><span class="loadkey__sw tone-green on"></span> Normal &lt; 60%</div>
-            <div class="loadkey"><span class="loadkey__sw tone-amber on"></span> Elevated 60–85%</div>
-            <div class="loadkey"><span class="loadkey__sw tone-red on"></span> Critical &gt; 85%</div>
-            <div class="loadkey pt-2" style="border-top:1px solid var(--cs-border); margin-top:8px">
-              Rated maximum <b class="ml-auto" style="color:var(--cs-txt)">{{ SPINDLE_MAX }}%</b>
-            </div>
-          </div>
+      <!-- segmented load bar across the full card width -->
+      <div class="loadbar">
+        <div *ngFor="let seg of spindleBars"
+             class="loadbar__seg" [class.on]="seg.on" [ngClass]="'tone-' + seg.tone"></div>
+      </div>
+      <div class="loadbar__ticks">
+        <span>0</span><span>25</span>
+        <span class="is-warn">60</span><span class="is-crit">85</span><span>100</span>
+      </div>
+
+      <div class="mt-auto grid grid-cols-3 gap-2 pt-4">
+        <div class="ipill text-center" [class.zone-on]="spindlePct < 60">
+          <span class="loadkey__sw tone-green mx-auto mb-1.5 block"></span>
+          <div class="ipill__k">Normal</div>
+          <div class="text-[.66rem] mt-0.5" style="color:var(--cs-txt-3)">&lt; 60%</div>
+        </div>
+        <div class="ipill text-center" [class.zone-on]="spindlePct >= 60 && spindlePct < 85">
+          <span class="loadkey__sw tone-amber mx-auto mb-1.5 block"></span>
+          <div class="ipill__k">Elevated</div>
+          <div class="text-[.66rem] mt-0.5" style="color:var(--cs-txt-3)">60–85%</div>
+        </div>
+        <div class="ipill text-center" [class.zone-on]="spindlePct >= 85">
+          <span class="loadkey__sw tone-red mx-auto mb-1.5 block"></span>
+          <div class="ipill__k">Critical</div>
+          <div class="text-[.66rem] mt-0.5" style="color:var(--cs-txt-3)">&gt; 85%</div>
         </div>
       </div>
     </div>

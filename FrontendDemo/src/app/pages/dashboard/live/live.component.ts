@@ -441,20 +441,21 @@ export class LiveComponent implements OnInit, OnDestroy {
   /* ── Spindle load column ──────────────────────────────────────
      A stack of lit segments, the way a machine-tool load meter on the
      controller itself reads — not a dial. */
-  readonly SPINDLE_SEGMENTS = 16;
+  readonly SPINDLE_SEGMENTS = 30;
   get spindlePct(): number { return Number(this.spindleSeries?.[0] ?? 0); }
 
+  /** Left-to-right segments; tone comes from where the segment sits on
+      the scale, so the zone boundaries stay put as the value moves. */
   get spindleBars(): { on: boolean; tone: string }[] {
     const pct = this.spindlePct;
+    const step = 100 / this.SPINDLE_SEGMENTS;
     return Array.from({ length: this.SPINDLE_SEGMENTS }, (_, i) => {
-      // segment 0 is the bottom of the column
-      const threshold = ((i + 1) / this.SPINDLE_SEGMENTS) * 100;
       const share = (i / this.SPINDLE_SEGMENTS) * 100;
       return {
-        on: pct >= threshold - (100 / this.SPINDLE_SEGMENTS) / 2,
+        on: pct >= (i + 1) * step - step / 2,
         tone: share >= 85 ? 'red' : share >= 60 ? 'amber' : 'green',
       };
-    }).reverse();   // render top-down
+    });
   }
 
   /* ── Feed override scale ──────────────────────────────────────

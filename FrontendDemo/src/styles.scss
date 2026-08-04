@@ -1864,3 +1864,41 @@ html.dark {
 .oee-row__v   { font-size: .8rem; font-weight: 700; color: var(--cs-txt); }
 
 .loadkey b { font-weight: 700; }
+
+/* ── Spindle load: horizontal segmented bar ──────────────────── */
+.loadbar {
+  display: flex; gap: 3px; margin-top: 18px;
+  padding: 9px; border-radius: 12px;
+  background: var(--cs-inset);
+  border: 1px solid var(--cs-border);
+}
+.loadbar__seg {
+  flex: 1; height: 30px; border-radius: 3px;
+  background: var(--cs-track);
+  transition: background .25s ease, box-shadow .25s ease;
+}
+.loadbar__seg.on.tone-green { background: #22C55E; box-shadow: 0 0 9px rgba(34,197,94,.45); }
+.loadbar__seg.on.tone-amber { background: #F5B301; box-shadow: 0 0 9px rgba(245,179,1,.45); }
+.loadbar__seg.on.tone-red   { background: #FF4D5E; box-shadow: 0 0 9px rgba(255,77,94,.5); }
+
+/* ticks sit under the zone boundaries they mark */
+.loadbar__ticks {
+  display: flex; margin-top: 7px;
+  font-size: .62rem; color: var(--cs-txt-3);
+  font-variant-numeric: tabular-nums;
+
+  span { flex: 0 0 auto; }
+  span:nth-child(2) { margin-left: calc(25% - 18px) }
+  span:nth-child(3) { margin-left: calc(35% - 20px) }
+  span:nth-child(4) { margin-left: calc(25% - 18px) }
+  span:nth-child(5) { margin-left: auto }
+  .is-warn { color: #CA8A04; font-weight: 700; }
+  .is-crit { color: #DC2626; font-weight: 700; }
+}
+
+/* the zone the current reading falls into */
+.ipill.zone-on {
+  border-color: var(--cs-border-st);
+  background: var(--cs-panel-2);
+}
+.dark .ipill.zone-on { background: rgba(255,255,255,.07); }
