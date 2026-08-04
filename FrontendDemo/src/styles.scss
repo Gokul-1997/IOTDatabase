@@ -1820,3 +1820,28 @@ html.dark {
   font-variant-numeric: tabular-nums;
 }
 .fscale__ticks .is-ref { color: #FF8189; font-weight: 700; }
+
+/* ── KPI tiles (quality page) ────────────────────────────────
+   Accent belongs to the metric, not the whole tile — a tinted
+   panel keeps them readable in both themes and consistent with
+   the rest of the console. */
+.kpi {
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border);
+  box-shadow: var(--cs-shadow);
+  color: var(--cs-txt);
+
+  p:first-of-type { color: var(--cs-txt); font-variant-numeric: tabular-nums; }
+  p:last-of-type  { color: var(--cs-txt-3); text-transform: uppercase;
+                    letter-spacing: .1em; font-size: .62rem; font-weight: 700; }
+
+  /* accent bar down the leading edge */
+  &::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  }
+  svg { width: 1.5rem; height: 1.5rem; }
+}
+.kpi--oee   { &::before { background: #6663B8 } svg { color: #6663B8 } }
+.kpi--avail { &::before { background: #22C55E } svg { color: #22C55E } }
+.kpi--perf  { &::before { background: #60A5FA } svg { color: #60A5FA } }
+.kpi--qual  { &::before { background: #A855F7 } svg { color: #A855F7 } }
