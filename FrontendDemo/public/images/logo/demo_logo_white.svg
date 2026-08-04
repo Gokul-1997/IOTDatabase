@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="40" viewBox="0 0 220 40">
+  <rect x="0" y="4" width="32" height="32" rx="8" fill="#ffffff"/>
+  <path d="M11 12 v16 h6 a8 8 0 0 0 0 -16 z" fill="none" stroke="#1F1D51" stroke-width="2.5" stroke-linejoin="round"/>
+  <text x="40" y="26" font-family="Arial, sans-serif" font-size="17" font-weight="600" fill="#ffffff">Dharstec Solutions</text>
+</svg>

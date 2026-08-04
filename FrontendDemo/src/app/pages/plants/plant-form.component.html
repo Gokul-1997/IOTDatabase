@@ -13,7 +13,7 @@
         <input
           formControlName="plant_code"
           placeholder="e.g. PLT-001"
-          class="w-full px-4 py-2 rounded bg-gray-100 dark:bg-[#12203a] border"
+          class="w-full px-4 py-2 rounded bg-gray-100 dark:bg-[#141523] border"
           [class.border-red-500]="form.get('plant_code')?.invalid && form.get('plant_code')?.touched" />
         <div *ngIf="form.get('plant_code')?.touched && form.get('plant_code')?.errors?.['required']"
           class="mt-1 text-xs text-red-500">
@@ -27,7 +27,7 @@
         <input
           formControlName="plant_name"
           placeholder="Plant Name"
-          class="w-full px-4 py-2 rounded bg-gray-100 dark:bg-[#12203a] border"
+          class="w-full px-4 py-2 rounded bg-gray-100 dark:bg-[#141523] border"
           [class.border-red-500]="form.get('plant_name')?.invalid && form.get('plant_name')?.touched" />
         <div *ngIf="form.get('plant_name')?.touched && form.get('plant_name')?.errors?.['required']"
           class="mt-1 text-xs text-red-500">
@@ -41,7 +41,7 @@
         <input
           formControlName="location"
           placeholder="Location"
-          class="w-full px-4 py-2 rounded bg-gray-100 dark:bg-[#12203a] border" />
+          class="w-full px-4 py-2 rounded bg-gray-100 dark:bg-[#141523] border" />
       </div>
 
       <!-- Error message (quota exceeded or any backend error) -->

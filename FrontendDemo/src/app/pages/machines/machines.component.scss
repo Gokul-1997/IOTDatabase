@@ -102,7 +102,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #2b3990;
+  background: #1F1D51;
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -116,7 +116,7 @@
   mat-icon { font-size: 18px; width: 18px; height: 18px; }
 
   &:hover {
-    background: #2f4ac4;
+    background: #34317C;
     box-shadow: 0 4px 12px rgba(59, 91, 219, 0.35);
   }
 }
@@ -378,7 +378,7 @@
 
 
 
-  .table-card { background: #12203a; }
+  .table-card { background: #141523; }
 
   .machines-table {
     .mat-mdc-header-row { background: #0f1c33; border-bottom-color: #1e2d45; }
@@ -400,5 +400,5 @@
     }
   }
 
-  .delete-modal { background: #12203a; h3 { color: #f1f3f5; } }
+  .delete-modal { background: #141523; h3 { color: #f1f3f5; } }
 }

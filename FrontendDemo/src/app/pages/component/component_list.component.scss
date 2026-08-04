@@ -22,11 +22,11 @@ $radius: 10px;
 // ── BUTTONS ───────────────────────────────────────────────────────────────
 .btn-primary {
   display: inline-flex; align-items: center; gap: 6px;
-  background: #2b3990; color: #fff; border: none; border-radius: $radius;
+  background: #1F1D51; color: #fff; border: none; border-radius: $radius;
   padding: 0 20px; height: 42px; font-size: 0.875rem; font-weight: 600;
   cursor: pointer; transition: background 0.2s, box-shadow 0.2s;
   mat-icon { font-size: 18px; width: 18px; height: 18px; }
-  &:hover { background: #2f4ac4; box-shadow: 0 4px 12px rgba(59,91,219,0.35); }
+  &:hover { background: #34317C; box-shadow: 0 4px 12px rgba(59,91,219,0.35); }
   &:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
@@ -138,7 +138,7 @@ $radius: 10px;
 :host-context(.dark) {
   .page-title h2 { color: #f1f3f5; }
   .search-box { background: #1e2a3a; border-color: #2d3f55; .search-input { color: #f1f3f5; } }
-  .table-card { background: #12203a; }
+  .table-card { background: #141523; }
   
   .form-modal, .delete-modal { h3 { color: #f1f3f5; } }
   .field { input, select { background: #1e2a3a; border-color: #2d3f55; color: #f1f3f5; } }

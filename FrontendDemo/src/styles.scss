@@ -4,8 +4,7 @@
 // Learn more about theming and how to use it for your application's
 // custom components at https://material.angular.dev/guide/theming
 @use '@angular/material' as mat;
-@import url('https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@100;200;300;400;500;600;700;800;900&family=Ubuntu:wght@300;400;500;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Questrial&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 
 html {
@@ -47,32 +46,49 @@ body {
 @tailwind utilities;
 
 body {
-  @apply bg-gradient-to-bl from-[#C5404A] via-[#5E3C79] to-[#4A2FA0] text-gray-900 bg-no-repeat font-ubuntu dark:bg-[#0F0F0F] dark:text-white transition-colors duration-300;
+  @apply bg-[#F4F5FA] text-gray-900 bg-no-repeat font-ubuntu dark:bg-[#0B0C15] dark:text-white transition-colors duration-300;
 }
 
 .bg-wrapper {
   min-height: 100vh;
-  background: linear-gradient(19deg, #4A2FA0 0%, #C5404A 100%);
+  background: #F4F5FA;
   padding-top: 15px;
 }
 .dark .bg-wrapper {
-  background: #000;
+  background: #0B0C15;
   padding-top: 15px;
 }
 .bg-top-bar{
-  @apply bg-gradient-to-r from-[#2B3990] to-[#9B3F70]
-  text-white rounded-xl px-1 md:px-4 py-2 mb-3
-            flex items-center justify-between  shadow-xl
+  @apply bg-white border border-gray-200
+  text-[#1F1D51] rounded-2xl px-1 md:px-4 py-2 mb-3
+            flex items-center justify-between shadow-sm
 }
 
 .dark .bg-top-bar{
-  background: #111111;
+  background: #141523;
+  border-color: #262744;
 }
 
 .bg-top-bar h2{
-  @apply text-xl font-bold text-white
+  @apply text-xl font-bold text-[#1F1D51] dark:text-white
+}
+/* Legacy pages set text-white on top-bar content; on the new light bar make it brand ink */
+.bg-top-bar[class~="text-white"],
+.bg-top-bar [class~="text-white"] {
+  color: #1F1D51;
+}
+.dark .bg-top-bar[class~="text-white"],
+.dark .bg-top-bar [class~="text-white"] {
+  color: #fff;
+}
+/* Colored status chips inside the top bar keep white text */
+.bg-top-bar button[class*="bg-"] {
+  color: #fff;
 }
 .bg-top-bar mat-icon{
+  color: #1F1D51;
+}
+.dark .bg-top-bar mat-icon{
   color: #fff;
 }
 .page-title{
@@ -83,11 +99,11 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: 'ubuntu', sans-serif !important;
+  font-family: 'Inter', sans-serif !important;
 }
 
 .icon-btn {
-  @apply bg-[#12203a] rounded-full p-2 text-white;
+  @apply bg-[#1F1D51] rounded-full p-2 text-white;
 }
 
 .status {
@@ -139,26 +155,24 @@ h4 {
   pointer-events: none;
 }
 
-/* MAIN NAV BUTTON */
+/* SIDEBAR NAV ITEM */
 .nav-btn {
-  padding:10px 16px;
-  border-radius: 15px;
-  font-size:15px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
   transition: all 0.15s ease;
-  // background: #EAEDFF;
-  background: rgb(43, 57, 144);
-  // border:1px solid #d0d5dd;
-  color: #fff;
-}
-
-.dark .nav-btn {
-  background: #111111;
-  color: #AEAEAE;
-  // border: 1px solid #2D2D2D;
+  background: transparent;
+  color: #B9B8D9;
 }
 
 .nav-btn:hover {
-  background: #863567;
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
 
@@ -166,21 +180,14 @@ h4 {
   color: white;
 }
 
-.dark .nav-btn:hover {
-  background: #222222;
-}
-
-.dark .nav-btn:hover {
-  color: white;
-}
-
 .nav-btn.active {
-  background: #863567;
-  color: white;
+  background: #ffffff;
+  color: #1F1D51;
 }
 
-.nav-btn.active svg {
-  color: white;
+.nav-btn.active svg,
+.nav-btn.active app-icon {
+  color: #1F1D51;
 }
 
 /* SUBMENU */
@@ -198,7 +205,7 @@ h4 {
 }
 
 .dark .submenu-card {
-  background: #0f1c33;
+  background: #141523;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -214,12 +221,12 @@ h4 {
 }
 
 .submenu-item:hover {
-  background: #2563eb;
+  background: #1F1D51;
   color: white;
 }
 
 .submenu-item.active {
-  background: #2563eb;
+  background: #1F1D51;
   color: white;
 }
 
@@ -242,11 +249,11 @@ h4 {
 }
 
 .btn-status:hover {
-  @apply flex items-center gap-2 text-sm bg-[#2B3990] font-medium text-white dark:text-gray-300 rounded-md px-3 py-2
+  @apply flex items-center gap-2 text-sm bg-[#1F1D51] font-medium text-white dark:text-gray-300 rounded-md px-3 py-2
 }
 
 .btn-status.active {
-  @apply flex items-center gap-2 text-sm bg-[#2B3990] font-medium text-white dark:text-gray-300 rounded-md px-3 py-2
+  @apply flex items-center gap-2 text-sm bg-[#1F1D51] font-medium text-white dark:text-gray-300 rounded-md px-3 py-2
 }
 
 .white-card {
@@ -265,35 +272,35 @@ h4 {
 
 @layer components {
   .menu-btn {
-    @apply rounded-full px-3 py-2 text-sm font-medium bg-white text-[var(--color-stm-primary)] hover:bg-[var(--color-stm-primary)] hover:text-white flex items-center gap-1 transition-colors dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200 border border-gray-300 dark:border-gray-700;
+    @apply rounded-full px-3 py-2 text-sm font-medium bg-white text-[var(--color-brand-primary)] hover:bg-[var(--color-brand-primary)] hover:text-white flex items-center gap-1 transition-colors dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200 border border-gray-300 dark:border-gray-700;
   }
 
   .menu-icon {
-    @apply w-5 h-5 text-[var(--color-stm-primary)] dark:text-gray-400 group-hover:text-white dark:group-hover:text-gray-200 transition-colors;
+    @apply w-5 h-5 text-[var(--color-brand-primary)] dark:text-gray-400 group-hover:text-white dark:group-hover:text-gray-200 transition-colors;
   }
 
 
 }
 
 :root {
-  --color-stm-primary: #1C3D6F;
-  --color-bg-light-gray: #F6F6F6;
-  --btn-primary: #2563eb;
-  --light-blue: #F3F4FF;
+  --color-brand-primary: #1F1D51;
+  --color-bg-light-gray: #F4F5FA;
+  --btn-primary: #1F1D51;
+  --light-blue: #EEEEFA;
   --green: #0CAD5D;
   --red: #FF5966;
   --yellow: #FFA600;
-  --blue: #3B4CCA;
-  --color-primary-100: #9CA5E1;
-  --color-primary-200: #6A78D2;
-  --color-primary-300: #3A4DC2;
-  --color-primary-400: #2B3990;
-  --color-primary-500: #182052;
+  --blue: #3F3C8F;
+  --color-primary-100: #A9A7D6;
+  --color-primary-200: #7B78BE;
+  --color-primary-300: #4C49A0;
+  --color-primary-400: #2E2B77;
+  --color-primary-500: #1F1D51;
 
 }
 
 .dark {
-  --color-stm-primary: #4F7FD9;
+  --color-brand-primary: #6663B8;
 }
 
 .apexcharts-canvas,
@@ -479,7 +486,7 @@ h4 {
   fill: #f9fafb;
 }
 .btn-blue{
-  @apply bg-[var(--color-stm-primary)] dark:bg-[#683b74] text-white pr-4 ps-2 py-1.5 rounded-lg font-medium text-sm flex items-center gap-1
+  @apply bg-[var(--color-brand-primary)] dark:bg-[#34317C] text-white pr-4 ps-2 py-1.5 rounded-lg font-medium text-sm flex items-center gap-1
 }
 
 .mdc-switch {
@@ -806,11 +813,11 @@ $radius: 10px;
 
 
 .btn-primary {
-  display: inline-flex; align-items: center; gap: 6px; background:#2b3990; color: #fff;
+  display: inline-flex; align-items: center; gap: 6px; background:#1F1D51; color: #fff;
   border: none; border-radius: $radius; padding: 0 20px; height: 42px;
   font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 0.2s, box-shadow 0.2s;
   mat-icon { font-size: 18px; width: 18px; height: 18px; }
-  &:hover { background: #2f4ac4; box-shadow: 0 4px 12px rgba(59,91,219,0.35); }
+  &:hover { background: #34317C; box-shadow: 0 4px 12px rgba(59,91,219,0.35); }
 }
 .dark .mat-mdc-icon-button[aria-disabled] .mat-mdc-paginator-icon {
     fill: #505050;
@@ -1030,7 +1037,7 @@ html.dark {
   overflow: hidden;
   position: relative;
 }
-.dark .table-card { background: #12203a; }
+.dark .table-card { background: #141523; }
 
 // Loading spinner overlay
 .loading-overlay {
@@ -1096,7 +1103,7 @@ html.dark {
 }
 
 .dark .delete-modal {
-  background: #12203a;
+  background: #141523;
   h3 { color: #f1f3f5; }
   p  { color: #8da5c4; }
   .delete-icon-wrap { background: #1e2d45; }
@@ -1151,7 +1158,7 @@ html.dark {
 //   border: none; border-radius: $radius; padding: 0 20px; height: 42px;
 //   font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 0.2s, box-shadow 0.2s;
 //   mat-icon { font-size: 18px; width: 18px; height: 18px; }
-//   &:hover { background: #2f4ac4; box-shadow: 0 4px 12px rgba(59,91,219,0.35); }
+//   &:hover { background: #34317C; box-shadow: 0 4px 12px rgba(59,91,219,0.35); }
 // }
 
 .ent-table {
@@ -1214,14 +1221,14 @@ html.dark {
 :host-context(.dark) {
   .page-title h2 { color: #f1f3f5; }
   .search-box { background: #1e2a3a; border-color: #2d3f55; .search-input { color: #f1f3f5; } }
-  .table-card { background: #12203a; }
+  .table-card { background: #141523; }
   // .ent-table {
   //   .mat-mdc-header-row { background: #0f1c33; border-bottom-color: #1e2d45; }
   //   .mat-mdc-header-cell { color: #8da5c4; }
   //   .mat-mdc-row.data-row:hover { background: #1a2d48; }
   //   .mat-mdc-cell { color: #c8d8ea; }
   // }
-  .delete-modal { background: #12203a; h3 { color: #f1f3f5; } }
+  .delete-modal { background: #141523; h3 { color: #f1f3f5; } }
 }
 .flex { display: flex; }
 .gap-2 { gap: 8px; }

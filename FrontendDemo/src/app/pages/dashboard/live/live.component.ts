@@ -497,7 +497,7 @@ export class LiveComponent implements OnInit, OnDestroy {
         type: 'gradient',
         gradient: {
           shade: 'dark', type: 'horizontal',
-          gradientToColors: ['#9B3F70'], stops: [0, 100]
+          gradientToColors: ['#4C49A0'], stops: [0, 100]
         }
       }
     };

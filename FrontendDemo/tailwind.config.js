@@ -10,8 +10,8 @@ module.exports = {
         'bg-light-gray': 'var(--color-bg-light-gray)',
       },
       fontFamily: {
-        ubuntu: ['Ubuntu', 'sans-serif'],
-        franklin: ['Libre Franklin', 'sans-serif'],
+        ubuntu: ['Inter', 'sans-serif'],
+        franklin: ['Inter', 'sans-serif'],
       },
       keyframes: {
     blink: {
