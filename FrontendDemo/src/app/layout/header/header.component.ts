@@ -75,6 +75,15 @@ export class HeaderComponent implements OnInit {
     }
 
     this.buildMenus();
+
+    this.applyTheme(localStorage.getItem('theme') === 'dark');
+    this.setCollapsed(localStorage.getItem('navCollapsed') === 'true');
+
+    // Land with the group holding the current route already expanded.
+    if (!this.isCollapsed) {
+      const owner = this.menus.find(m => m.children && this.isChildActive(m.children));
+      if (owner) this.openMenu = owner.label;
+    }
   }
 
   buildMenus() {
@@ -107,20 +116,39 @@ export class HeaderComponent implements OnInit {
     this.auth.logout();
   }
 
-  toggleMenu(label: string) { this.openMenu = this.openMenu === label ? null : label; }
+  toggleMenu(label: string) {
+    // A collapsed rail has no room for the child list — open the sidebar first.
+    if (this.isCollapsed) this.setCollapsed(false);
+    this.openMenu = this.openMenu === label ? null : label;
+  }
   closeMenu() { this.openMenu = null; }
 
   navigate(menu: any) {
     this.router.navigate([menu.path]);
-    this.closeMenu();
+    // Group stays expanded on purpose: the sidebar is an accordion, not a
+    // dropdown, so siblings remain reachable after navigating.
   }
 
   isActive(path: string) { return this.router.url.startsWith(path); }
   isChildActive(children: any[]) { return children?.some(c => this.router.url.startsWith(c.path)); }
 
-  toggleTheme() {
-    this.isDark = !this.isDark;
-    document.documentElement.classList.toggle('dark', this.isDark);
+  toggleTheme() { this.applyTheme(!this.isDark); }
+
+  private applyTheme(dark: boolean) {
+    this.isDark = dark;
+    document.documentElement.classList.toggle('dark', dark);
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
+  }
+
+  isCollapsed = false;
+  toggleCollapse() { this.setCollapsed(!this.isCollapsed); }
+
+  private setCollapsed(collapsed: boolean) {
+    this.isCollapsed = collapsed;
+    localStorage.setItem('navCollapsed', String(collapsed));
+    if (collapsed) this.openMenu = null;   // no room for child lists on the rail
+    // Page content reads this to keep clear of the fixed rail.
+    document.documentElement.style.setProperty('--nav-w', collapsed ? '4.5rem' : '15rem');
   }
 
   isMobileMenuOpen = false;
@@ -128,11 +156,11 @@ export class HeaderComponent implements OnInit {
 
   @HostListener('document:click', ['$event'])
   onClickOutside(event: MouseEvent) {
+    // Only the user pop-over closes on outside click; the nav accordion persists.
     const target = event.target as HTMLElement;
-    if (!target.closest('nav'))            this.openMenu    = null;
     if (!target.closest('.user-menu-wrap')) this.showUserMenu = false;
   }
 
   @HostListener('document:keydown.escape')
-  onEsc() { this.openMenu = null; }
+  onEsc() { this.showUserMenu = false; }
 }

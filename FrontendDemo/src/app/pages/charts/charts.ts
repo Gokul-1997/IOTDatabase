@@ -53,9 +53,11 @@ export class Charts implements OnInit, OnDestroy {
 
   private buildChartOptions(): void {
     const dark = this.isDark;
-    const bg        = dark ? '#1f2937' : '#ffffff';
-    const textColor = dark ? '#d1d5db' : '#374151';
-    const gridColor = dark ? '#374151' : '#e9ecef';
+    // Brand palette — same tokens the rest of the console uses, so charts
+    // read as part of the product rather than library defaults.
+    const bg        = 'transparent';
+    const textColor = dark ? '#8E8CC7' : '#4A4C6B';
+    const gridColor = dark ? 'rgba(255,255,255,.08)' : 'rgba(31,29,81,.10)';
 
     
     this.partChartOptions = {
@@ -72,7 +74,7 @@ export class Charts implements OnInit, OnDestroy {
       xaxis:  { labels: { style: { colors: textColor } } },
       legend: { position: 'top', labels: { colors: textColor } },
       fill:   { opacity: 1 },
-      colors: ['#51cf66', '#ff6b6b'],
+      colors: ['#22C55E', '#FF4D5E'],
       grid:   { borderColor: gridColor },
       theme:  { mode: dark ? 'dark' : 'light' },
       tooltip: {
@@ -92,9 +94,9 @@ export class Charts implements OnInit, OnDestroy {
       chart: {
         type: 'line', height: 350, toolbar: { show: false }, zoom: { enabled: false },
         background: bg,
-        dropShadow: { enabled: true, color: '#000', top: 18, left: 7, blur: 10, opacity: 0.15 }
+        dropShadow: { enabled: false }
       },
-      colors:     ['#3b5bdb'],
+      colors:     ['#6663B8'],
       dataLabels: { enabled: true, formatter: (val: number) => val > 0 ? String(val) : '' },
       stroke:     { curve: 'smooth', width: 3 },
       grid:       { borderColor: gridColor },

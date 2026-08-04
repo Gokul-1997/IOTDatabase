@@ -44,19 +44,19 @@ export class LoginComponent
 
     slides = [
         {
-            image: '/images/product/machine_login_02.png',
+            image: '/images/product/cnc-vmc.svg',
             title: 'Access your IoT Dashboard',
             desc: 'Monitor machines and production live'
         },
 
         {
-            image: '/images/product/machine_login_02.png',
+            image: '/images/product/cnc-vmc.svg',
             title: 'Track OEE Performance',
             desc: 'Availability, Quality and Efficiency'
         },
 
         {
-            image: '/images/product/machine_login_02.png',
+            image: '/images/product/cnc-vmc.svg',
             title: 'Smart Factory Control',
             desc: 'Real time monitoring and alerts'
         }

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" fill="none">
+  <defs>
+    <linearGradient id="vBody" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8C90A8"/><stop offset=".5" stop-color="#6B7089"/><stop offset="1" stop-color="#4A4E64"/>
+    </linearGradient>
+    <linearGradient id="vPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B3F55"/><stop offset="1" stop-color="#262A3B"/>
+    </linearGradient>
+    <linearGradient id="vGlass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B2440" stop-opacity=".95"/><stop offset="1" stop-color="#0E1424" stop-opacity=".95"/>
+    </linearGradient>
+    <linearGradient id="vGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6663B8" stop-opacity=".55"/><stop offset="1" stop-color="#6663B8" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- base / stand -->
+  <path d="M52 206h216v14a4 4 0 0 1-4 4H56a4 4 0 0 1-4-4z" fill="#31354A"/>
+  <rect x="44" y="198" width="232" height="10" rx="3" fill="#4A4E64"/>
+
+  <!-- main enclosure -->
+  <rect x="58" y="34" width="204" height="166" rx="8" fill="url(#vBody)"/>
+  <rect x="58" y="34" width="204" height="166" rx="8" stroke="#9BA0BA" stroke-opacity=".35" stroke-width="1.5"/>
+
+  <!-- top hood -->
+  <path d="M58 42a8 8 0 0 1 8-8h188a8 8 0 0 1 8 8v16H58z" fill="#5A5F78"/>
+  <rect x="132" y="40" width="56" height="8" rx="4" fill="#3B3F55"/>
+
+  <!-- viewing window -->
+  <rect x="76" y="70" width="118" height="104" rx="5" fill="url(#vGlass)" stroke="#9BA0BA" stroke-opacity=".4" stroke-width="2"/>
+  <!-- interior glow -->
+  <rect x="82" y="76" width="106" height="92" rx="3" fill="url(#vGlow)"/>
+  <!-- spindle head inside -->
+  <rect x="122" y="80" width="26" height="34" rx="3" fill="#8C90A8"/>
+  <path d="M131 114h8l-2 16h-4z" fill="#B9BDD0"/>
+  <!-- workpiece + table -->
+  <rect x="104" y="146" width="62" height="8" rx="2" fill="#6B7089"/>
+  <rect x="124" y="132" width="22" height="14" rx="2" fill="#9BA0BA"/>
+  <!-- cutting spark -->
+  <circle cx="135" cy="131" r="3.5" fill="#F5B301" opacity=".9"/>
+  <circle cx="135" cy="131" r="8" fill="#F5B301" opacity=".22"/>
+
+  <!-- door handle -->
+  <rect x="198" y="112" width="6" height="26" rx="3" fill="#B9BDD0"/>
+
+  <!-- control pendant -->
+  <rect x="212" y="66" width="42" height="82" rx="5" fill="url(#vPanel)" stroke="#9BA0BA" stroke-opacity=".3"/>
+  <rect x="218" y="72" width="30" height="24" rx="2" fill="#0E1424"/>
+  <rect x="221" y="76" width="16" height="2.5" rx="1.2" fill="#22C55E" opacity=".85"/>
+  <rect x="221" y="82" width="22" height="2.5" rx="1.2" fill="#6663B8" opacity=".8"/>
+  <rect x="221" y="88" width="12" height="2.5" rx="1.2" fill="#8E8CC7" opacity=".6"/>
+  <g fill="#5A5F78">
+    <rect x="219" y="103" width="8" height="6" rx="1.5"/><rect x="230" y="103" width="8" height="6" rx="1.5"/>
+    <rect x="241" y="103" width="8" height="6" rx="1.5"/><rect x="219" y="113" width="8" height="6" rx="1.5"/>
+    <rect x="230" y="113" width="8" height="6" rx="1.5"/><rect x="241" y="113" width="8" height="6" rx="1.5"/>
+  </g>
+  <circle cx="225" cy="134" r="6" fill="#E33F4C"/>
+  <circle cx="243" cy="134" r="6" fill="#2E3245" stroke="#8C90A8" stroke-width="1.5"/>
+
+  <!-- status beacon -->
+  <rect x="150" y="16" width="14" height="20" rx="4" fill="#3B3F55"/>
+  <circle cx="157" cy="22" r="3.5" fill="#22C55E"/>
+  <circle cx="157" cy="22" r="7" fill="#22C55E" opacity=".25"/>
+  <rect x="154" y="8" width="6" height="10" rx="3" fill="#5A5F78"/>
+</svg>

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" fill="none">
+  <defs>
+    <linearGradient id="lBody" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8C90A8"/><stop offset=".5" stop-color="#6B7089"/><stop offset="1" stop-color="#4A4E64"/>
+    </linearGradient>
+    <linearGradient id="lGlass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B2440" stop-opacity=".95"/><stop offset="1" stop-color="#0E1424" stop-opacity=".95"/>
+    </linearGradient>
+    <linearGradient id="lGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22C55E" stop-opacity=".4"/><stop offset="1" stop-color="#22C55E" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="lPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B3F55"/><stop offset="1" stop-color="#262A3B"/>
+    </linearGradient>
+  </defs>
+
+  <!-- base -->
+  <path d="M40 200h240v16a4 4 0 0 1-4 4H44a4 4 0 0 1-4-4z" fill="#31354A"/>
+  <rect x="32" y="192" width="256" height="10" rx="3" fill="#4A4E64"/>
+
+  <!-- body: wide horizontal enclosure -->
+  <rect x="44" y="62" width="232" height="132" rx="8" fill="url(#lBody)" stroke="#9BA0BA" stroke-opacity=".35" stroke-width="1.5"/>
+  <path d="M44 70a8 8 0 0 1 8-8h216a8 8 0 0 1 8 8v14H44z" fill="#5A5F78"/>
+
+  <!-- sliding door window (wide) -->
+  <rect x="58" y="96" width="150" height="82" rx="5" fill="url(#lGlass)" stroke="#9BA0BA" stroke-opacity=".4" stroke-width="2"/>
+  <rect x="64" y="102" width="138" height="70" rx="3" fill="url(#lGlow)"/>
+
+  <!-- chuck (left) + spindle -->
+  <circle cx="92" cy="138" r="19" fill="#6B7089" stroke="#9BA0BA" stroke-opacity=".5" stroke-width="1.5"/>
+  <circle cx="92" cy="138" r="9" fill="#3B3F55"/>
+  <g fill="#B9BDD0">
+    <rect x="88" y="115" width="8" height="7" rx="2"/><rect x="88" y="154" width="8" height="7" rx="2"/>
+    <rect x="69" y="134" width="7" height="8" rx="2"/><rect x="108" y="134" width="7" height="8" rx="2"/>
+  </g>
+
+  <!-- bar stock -->
+  <rect x="110" y="133" width="56" height="10" rx="2" fill="#9BA0BA"/>
+
+  <!-- turret + tool -->
+  <path d="M168 116h22v20l-14 8-8-6z" fill="#5A5F78" stroke="#9BA0BA" stroke-opacity=".4"/>
+  <path d="M166 141l8-6 4 5-8 6z" fill="#B9BDD0"/>
+  <!-- chip spark -->
+  <circle cx="166" cy="140" r="3.5" fill="#F5B301" opacity=".9"/>
+  <circle cx="166" cy="140" r="8" fill="#F5B301" opacity=".22"/>
+
+  <!-- tailstock -->
+  <rect x="176" y="128" width="24" height="20" rx="3" fill="#6B7089"/>
+
+  <!-- handle -->
+  <rect x="212" y="122" width="6" height="30" rx="3" fill="#B9BDD0"/>
+
+  <!-- control pendant (right) -->
+  <rect x="226" y="92" width="40" height="76" rx="5" fill="url(#lPanel)" stroke="#9BA0BA" stroke-opacity=".3"/>
+  <rect x="232" y="98" width="28" height="22" rx="2" fill="#0E1424"/>
+  <rect x="235" y="102" width="14" height="2.5" rx="1.2" fill="#22C55E" opacity=".85"/>
+  <rect x="235" y="108" width="20" height="2.5" rx="1.2" fill="#6663B8" opacity=".8"/>
+  <g fill="#5A5F78">
+    <rect x="233" y="127" width="7" height="6" rx="1.5"/><rect x="243" y="127" width="7" height="6" rx="1.5"/>
+    <rect x="253" y="127" width="7" height="6" rx="1.5"/><rect x="233" y="137" width="7" height="6" rx="1.5"/>
+    <rect x="243" y="137" width="7" height="6" rx="1.5"/><rect x="253" y="137" width="7" height="6" rx="1.5"/>
+  </g>
+  <circle cx="240" cy="156" r="6" fill="#E33F4C"/>
+  <circle cx="256" cy="156" r="6" fill="#2E3245" stroke="#8C90A8" stroke-width="1.5"/>
+
+  <!-- beacon -->
+  <rect x="146" y="44" width="14" height="20" rx="4" fill="#3B3F55"/>
+  <circle cx="153" cy="50" r="3.5" fill="#22C55E"/>
+  <circle cx="153" cy="50" r="7" fill="#22C55E" opacity=".25"/>
+  <rect x="150" y="36" width="6" height="10" rx="3" fill="#5A5F78"/>
+</svg>

@@ -50,19 +50,19 @@ export class ForgotPasswordComponent
 
     slides = [
         {
-            image: '/images/product/machine_login_02.png',
+            image: '/images/product/cnc-vmc.svg',
             title: 'Reset Password Securely',
             desc: 'Recover access to your dashboard'
         },
 
         {
-            image: '/images/product/machine_login_02.png',
+            image: '/images/product/cnc-vmc.svg',
             title: 'Secure Authentication',
             desc: 'Your data stays protected'
         },
 
         {
-            image: '/images/product/machine_login_02.png',
+            image: '/images/product/cnc-vmc.svg',
             title: 'Back to Production Fast',
             desc: 'Minimize downtime quickly'
         }
