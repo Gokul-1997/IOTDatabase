@@ -1250,25 +1250,29 @@ html.dark {
    ════════════════════════════════════════════════════════════════ */
 
 :root {
-  --cs-bg:        #EEF0F8;
-  --cs-bg-glow-1: rgba(102,99,184,.16);
-  --cs-bg-glow-2: rgba(31,29,81,.10);
+  /* Light: a deeper desk tone so white panels genuinely lift off it. */
+  --cs-bg:        #DFE2F0;
+  --cs-bg-glow-1: rgba(102,99,184,.30);
+  --cs-bg-glow-2: rgba(31,29,81,.16);
 
   --cs-panel:     #FFFFFF;
-  --cs-panel-2:   #F7F8FC;
-  --cs-panel-top: rgba(31,29,81,.03);
-  --cs-border:    rgba(31,29,81,.12);
-  --cs-border-st: rgba(31,29,81,.22);
-  --cs-shadow:    0 6px 20px -8px rgba(31,29,81,.28);
-  --cs-shadow-lg: 0 16px 34px -12px rgba(31,29,81,.34);
+  --cs-panel-2:   #F5F6FC;
+  --cs-panel-top: rgba(31,29,81,.02);
+  --cs-border:    rgba(31,29,81,.14);
+  --cs-border-st: rgba(31,29,81,.30);
+  --cs-shadow:    0 2px 4px -1px rgba(31,29,81,.10), 0 12px 28px -10px rgba(31,29,81,.30);
+  --cs-shadow-lg: 0 4px 8px -2px rgba(31,29,81,.14), 0 24px 46px -14px rgba(31,29,81,.40);
 
-  --cs-txt:       #1B1C33;
-  --cs-txt-2:     #4A4C6B;
-  --cs-txt-3:     #7A7CA0;
+  --cs-txt:       #14152B;
+  --cs-txt-2:     #414365;
+  --cs-txt-3:     #6E70963;
+  --cs-txt-3:     #6E7096;
 
-  --cs-inset:     #F2F3FA;
-  --cs-rail-off:  #C9CBDC;
+  --cs-inset:     #EFF1F9;
+  --cs-rail-off:  #B9BCD2;
   --cs-nav:       #1F1D51;
+
+  --cs-track:     rgba(31,29,81,.13);
 }
 
 .dark {
@@ -1291,6 +1295,8 @@ html.dark {
   --cs-inset:     rgba(11,12,21,.55);
   --cs-rail-off:  #3A3B57;
   --cs-nav:       #141523;
+
+  --cs-track:     rgba(255,255,255,.10);
 }
 
 /* ── Page shell ──────────────────────────────────────────────── */
@@ -1735,3 +1741,27 @@ html.dark {
 }
 .apexcharts-legend-text { color: var(--cs-txt-2) !important; }
 .apexcharts-gridline { stroke: var(--cs-border) !important; }
+
+/* ── Hand-drawn instrument visuals (no chart library) ────────── */
+.ring-track { stroke: var(--cs-track); }
+
+.tsplit {
+  display: flex; gap: 3px; height: 12px;
+  border-radius: 999px; overflow: hidden;
+  background: var(--cs-track);
+}
+.tsplit__run  {
+  background: linear-gradient(90deg, #16A34A, #22C55E);
+  border-radius: 999px; transition: width .6s cubic-bezier(.4,0,.2,1);
+}
+.tsplit__idle {
+  background: linear-gradient(90deg, #F5B301, #FBBF24);
+  border-radius: 999px; transition: width .6s cubic-bezier(.4,0,.2,1);
+}
+
+.oee-leg { display: flex; align-items: center; gap: 10px; }
+.oee-leg__bar { width: 4px; height: 30px; border-radius: 999px; flex-shrink: 0; }
+
+/* machine artwork: shadow only reads well on the dark surface */
+.machine-art { filter: none; }
+.dark .machine-art { filter: drop-shadow(0 10px 24px rgba(0,0,0,.6)); }

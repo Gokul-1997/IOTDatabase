@@ -57,8 +57,7 @@
 
         <div class="md:w-2/5 flex items-center justify-center">
           <img [src]="machine?.image || '/images/product/cnc-vmc.svg'"
-               class="w-full max-h-44 object-contain"
-               style="filter: drop-shadow(0 10px 24px rgba(0,0,0,.6))" />
+               class="w-full max-h-44 object-contain machine-art" />
         </div>
 
         <div class="md:w-3/5 grid grid-cols-2 gap-2.5">
@@ -116,19 +115,28 @@
 
 
     <!-- ── TIME SPLIT ── -->
-    <div class="xl:col-span-3 icard">
-      <div class="icard__h">Time Split</div>
+    <div class="xl:col-span-3 icard flex flex-col">
+      <div class="icard__h">Shift Time Split</div>
 
-      <apx-chart
-        [series]="timePieSeries"
-        [chart]="timePieChart.chart"
-        [labels]="timePieChart.labels"
-        [colors]="timePieChart.colors"
-        [legend]="timePieChart.legend"
-        [dataLabels]="timePieChart.dataLabels">
-      </apx-chart>
+      <!-- headline utilisation -->
+      <div class="flex items-end justify-between mb-3">
+        <div>
+          <div class="ibig" style="font-size:2.4rem; line-height:1">{{ runPct | number:'1.0-0' }}<span class="text-lg">%</span></div>
+          <div class="ipill__k mt-1">Running share</div>
+        </div>
+        <div class="text-right">
+          <div class="ipill__v" style="color:#CA8A04">{{ idlePct | number:'1.0-0' }}%</div>
+          <div class="ipill__k">Idle</div>
+        </div>
+      </div>
 
-      <div class="grid grid-cols-2 gap-2 mt-3">
+      <!-- proportional split bar -->
+      <div class="tsplit">
+        <div class="tsplit__run"  [style.width.%]="runPct"></div>
+        <div class="tsplit__idle" [style.width.%]="idlePct"></div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mt-4">
         <div class="ipill">
           <div class="flex items-center gap-1.5">
             <span class="w-1.5 h-1.5 rounded-full" style="background:#22C55E"></span>
@@ -181,16 +189,21 @@
           </div>
         </div>
 
-        <div class="overflow-hidden">
-          <div class="chart-align-center">
-            <apx-chart
-              [series]="utilSeries"
-              [chart]="utilChart.chart"
-              [plotOptions]="utilChart.plotOptions"
-              [colors]="utilChart.colors"
-              [fill]="utilChart.fill"
-              [labels]="['Utilization']">
-            </apx-chart>
+        <div class="relative shrink-0" style="width:104px; height:104px">
+          <svg viewBox="0 0 104 104" class="w-full h-full -rotate-90">
+            <defs>
+              <linearGradient id="utilGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#6663B8"/><stop offset="1" stop-color="#22C55E"/>
+              </linearGradient>
+            </defs>
+            <circle cx="52" cy="52" r="44" fill="none" class="ring-track" stroke-width="10"/>
+            <circle cx="52" cy="52" r="44" fill="none" stroke="url(#utilGrad)" stroke-width="10" [attr.stroke-linecap]="ringCap(utilSeries[0])"
+                    [attr.stroke-dasharray]="ringDash(utilSeries[0], 44)"/>
+          </svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span class="text-lg font-bold leading-none"
+                  style="color:var(--cs-txt); font-variant-numeric:tabular-nums">{{ utilSeries[0] || 0 }}%</span>
+            <span class="text-[.5rem] uppercase tracking-[.14em] mt-1" style="color:var(--cs-txt-3)">Util</span>
           </div>
         </div>
       </div>
@@ -227,42 +240,47 @@
     <div class="icard flex flex-col">
       <div class="icard__h">Overall Equipment Effectiveness</div>
 
-      <div class="flex items-center justify-center w-full overflow-hidden flex-1">
+      <div class="flex items-center justify-center gap-5 w-full flex-1">
 
-        <div class="relative flex-shrink-0 -mt-4" style="width:220px; height:190px; overflow:hidden">
-          <apx-chart
-            [series]="oeeSeries"
-            [chart]="oeeChart.chart"
-            [plotOptions]="oeeChart.plotOptions"
-            [fill]="oeeChart.fill"
-            [stroke]="oeeChart.stroke"
-            [dataLabels]="oeeChart.dataLabels"
-            [labels]="oeeChart.labels">
-          </apx-chart>
-          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-20"
-               style="padding-bottom:26px">
-            <span class="text-3xl font-bold" style="color:var(--cs-txt); font-variant-numeric:tabular-nums">{{ oee?.oee || 0 }}%</span>
-            <span class="text-[.6rem] uppercase tracking-[.14em] text-[#6F6DA8] mt-0.5">OEE</span>
+        <!-- three concentric arcs: availability, performance, quality -->
+        <div class="relative shrink-0" style="width:170px; height:170px">
+          <svg viewBox="0 0 170 170" class="w-full h-full -rotate-90">
+            <circle cx="85" cy="85" r="74" fill="none" class="ring-track" stroke-width="11"/>
+            <circle cx="85" cy="85" r="58" fill="none" class="ring-track" stroke-width="11"/>
+            <circle cx="85" cy="85" r="42" fill="none" class="ring-track" stroke-width="11"/>
+
+            <circle cx="85" cy="85" r="74" fill="none" stroke="#22C55E" stroke-width="11" [attr.stroke-linecap]="ringCap(oee?.availability)"
+                    [attr.stroke-dasharray]="ringDash(oee?.availability, 74)"/>
+            <circle cx="85" cy="85" r="58" fill="none" stroke="#60A5FA" stroke-width="11" [attr.stroke-linecap]="ringCap(oee?.performance)"
+                    [attr.stroke-dasharray]="ringDash(oee?.performance, 58)"/>
+            <circle cx="85" cy="85" r="42" fill="none" stroke="#A855F7" stroke-width="11" [attr.stroke-linecap]="ringCap(oee?.quality)"
+                    [attr.stroke-dasharray]="ringDash(oee?.quality, 42)"/>
+          </svg>
+
+          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span class="text-[1.7rem] font-bold leading-none"
+                  style="color:var(--cs-txt); font-variant-numeric:tabular-nums">{{ oee?.oee || 0 }}%</span>
+            <span class="text-[.55rem] uppercase tracking-[.16em] mt-1" style="color:var(--cs-txt-3)">OEE</span>
           </div>
         </div>
 
-        <div class="flex flex-col gap-3 pl-1">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full shrink-0" style="background:#22C55E"></span>
+        <div class="flex flex-col gap-3">
+          <div class="oee-leg">
+            <span class="oee-leg__bar" style="background:#22C55E"></span>
             <div>
               <div class="ipill__k">Availability</div>
               <div class="ipill__v">{{ oee?.availability || 0 }}%</div>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full shrink-0" style="background:#60A5FA"></span>
+          <div class="oee-leg">
+            <span class="oee-leg__bar" style="background:#60A5FA"></span>
             <div>
               <div class="ipill__k">Performance</div>
               <div class="ipill__v">{{ oee?.performance || 0 }}%</div>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full shrink-0" style="background:#A855F7"></span>
+          <div class="oee-leg">
+            <span class="oee-leg__bar" style="background:#A855F7"></span>
             <div>
               <div class="ipill__k">Quality</div>
               <div class="ipill__v">{{ oee?.quality || 0 }}%</div>

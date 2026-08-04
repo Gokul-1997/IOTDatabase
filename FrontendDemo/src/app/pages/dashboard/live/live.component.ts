@@ -415,6 +415,21 @@ export class LiveComponent implements OnInit, OnDestroy {
     ];
   }
 
+  /* Split percentages drive the run/idle bar and the OEE rings, both of
+     which are hand-drawn SVG rather than chart-library widgets. */
+  get runPct():  number { return Number(this.timePieSeries?.[0] ?? 0); }
+  get idlePct(): number { return Number(this.timePieSeries?.[1] ?? 0); }
+
+  /** stroke-dasharray for a progress ring of radius r, given a 0-100 value */
+  ringDash(pct: any, r: number): string {
+    const c = 2 * Math.PI * r;
+    const v = Math.max(0, Math.min(100, Number(pct) || 0));
+    return `${(v / 100) * c} ${c}`;
+  }
+
+  /** A round cap on a zero-length arc still paints a dot — square it off. */
+  ringCap(pct: any): string { return (Number(pct) || 0) > 0 ? 'round' : 'butt'; }
+
   private timeToSec(t: string): number {
     if (!t) return 0;
     const p = t.split(':').map(Number);
