@@ -6,13 +6,26 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeProvider';
 import { Card } from '../../components/Card';
 import { Skeleton } from '../../components/Skeleton';
+import { HourlyProductionChart } from '../../components/HourlyProductionChart';
 import * as machineDetailApi from '../../api/machineDetail';
+import * as chartApi from '../../api/chart';
 import { MachineDetailResponse } from '../../types/machineDetail';
+import { HourlyProductionPoint } from '../../types/chart';
 import { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MachineDetail'>;
 
 const AUTO_REFRESH_MS = 15_000;
+
+// Backend windows are IST-based (shift start/end times) — compute "today" in
+// IST regardless of the device's own timezone, matching the web app.
+function todayIST(): string {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 function statusColor(theme: ReturnType<typeof useTheme>, status: string) {
   if (status === 'RUNNING') return theme.colors.success;
@@ -97,6 +110,7 @@ export function MachineDetailScreen({ route, navigation }: Props) {
   const { machineId, machineName } = route.params;
 
   const [detail, setDetail] = useState<MachineDetailResponse | null>(null);
+  const [chartData, setChartData] = useState<HourlyProductionPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +124,18 @@ export function MachineDetailScreen({ route, navigation }: Props) {
       const data = await machineDetailApi.getMachineDetail(machineId);
       setDetail(data);
       setError(null);
+
+      if (data.shift.id != null) {
+        try {
+          const chart = await chartApi.getHourlyProduction(machineId, data.shift.id, todayIST());
+          setChartData(chart.hourlyCount);
+        } catch {
+          // Chart is a secondary widget — a failure here shouldn't block the rest of the screen.
+          setChartData(null);
+        }
+      } else {
+        setChartData(null);
+      }
     } catch {
       setError('Unable to load machine details.');
     }
@@ -223,6 +249,14 @@ export function MachineDetailScreen({ route, navigation }: Props) {
             </View>
           </View>
         </Card>
+
+        {/* Hourly production — trend for this shift */}
+        {chartData && chartData.length > 0 && (
+          <Card>
+            <SectionLabel>Hourly Production</SectionLabel>
+            <HourlyProductionChart data={chartData} />
+          </Card>
+        )}
 
         {/* Quality */}
         <Card>

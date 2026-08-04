@@ -750,6 +750,7 @@ exports.machineDetail = async (plantId, machineId, companyId) => {
       },
 
       shift: {
+        id:         shift?.id || null,
         shift_code: shift?.shift_code || '--'
       },
 

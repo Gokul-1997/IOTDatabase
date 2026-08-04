@@ -6,6 +6,7 @@ export interface MachineDetailResponse {
     image: string | null;
   };
   shift: {
+    id: number | null;
     shift_code: string;
   };
   operator: {
