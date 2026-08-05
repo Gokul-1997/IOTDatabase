@@ -2094,3 +2094,14 @@ html.dark {
 }
 
 .mtile.is-off { opacity: .68; }
+
+/* Three tiles is the working width: wider than that and a tile stops
+   being scannable at a glance, so the grid caps there and spends extra
+   room on the tiles themselves rather than on more columns. */
+.mgrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 720px)  { .mgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1240px) { .mgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

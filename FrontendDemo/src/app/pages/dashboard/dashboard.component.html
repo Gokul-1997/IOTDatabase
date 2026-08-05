@@ -92,7 +92,7 @@
 
 
   <!-- ══════════ MACHINE GRID ══════════ -->
-  <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
+  <div class="mgrid">
 
     <div *ngFor="let m of pagedMachines; trackBy: trackByMachine"
          (click)="goToLive(m.machine_id)"
