@@ -1949,3 +1949,148 @@ html.dark {
   .pace { color: #4ADE80 }
   .pace--behind { color: #FF8189 }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   MACHINE TILE
+   Borrows the machine-tool's own visual language: an engraved
+   nameplate, the andon stack light every shop floor already reads,
+   and a machined scale for output against pace.
+   ════════════════════════════════════════════════════════════════ */
+.mtile {
+  position: relative; overflow: hidden;
+  border-radius: 18px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border);
+  box-shadow: var(--cs-shadow);
+  cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.mtile:hover {
+  transform: translateY(-3px);
+  border-color: var(--cs-border-st);
+  box-shadow: var(--cs-shadow-lg);
+}
+
+/* ── engraved nameplate ─────────────────────────────────────── */
+.mtile__plate {
+  position: relative;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, var(--cs-inset), transparent);
+  border-bottom: 1px solid var(--cs-border);
+}
+.mtile__id {
+  font-size: 1.12rem; font-weight: 800; letter-spacing: .03em;
+  color: var(--cs-txt); line-height: 1.15;
+}
+.mtile__part {
+  font-size: .64rem; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--cs-txt-3); margin-top: 2px;
+}
+.mtile__state {
+  font-size: .58rem; font-weight: 800; letter-spacing: .14em;
+  padding: 4px 9px; border-radius: 5px; flex-shrink: 0;
+  background: var(--cs-track); color: var(--cs-txt-3);
+}
+.mtile.is-run   .mtile__state { background: rgba(34,197,94,.15); color: #15803D; }
+.mtile.is-idle  .mtile__state { background: rgba(245,179,1,.18); color: #A16207; }
+.mtile.is-alarm .mtile__state { background: rgba(255,77,94,.16); color: #B91C1C; }
+.dark .mtile.is-run   .mtile__state { color: #4ADE80; }
+.dark .mtile.is-idle  .mtile__state { color: #FBBF24; }
+.dark .mtile.is-alarm .mtile__state { color: #FF8189; }
+
+/* ── andon stack light ──────────────────────────────────────── */
+.andon {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 5px; border-radius: 7px; flex-shrink: 0;
+  background: linear-gradient(180deg, var(--cs-track), var(--cs-inset));
+  border: 1px solid var(--cs-border);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.10);
+}
+.andon__lamp {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--cs-rail-off); opacity: .28;
+  transition: all .25s ease;
+}
+.mtile.is-alarm .andon__lamp--red {
+  background: #FF4D5E; opacity: 1; box-shadow: 0 0 9px rgba(255,77,94,.95);
+  animation: andonBlink 1s steps(2) infinite;
+}
+.mtile.is-idle  .andon__lamp--amber { background: #F5B301; opacity: 1; box-shadow: 0 0 9px rgba(245,179,1,.95); }
+.mtile.is-run   .andon__lamp--green { background: #22C55E; opacity: 1; box-shadow: 0 0 9px rgba(34,197,94,.95); }
+@keyframes andonBlink { 50% { opacity: .25 } }
+
+/* ── readout ────────────────────────────────────────────────── */
+.mtile__body { position: relative; padding: 16px; }
+.mtile__k {
+  font-size: .6rem; text-transform: uppercase; letter-spacing: .13em;
+  color: var(--cs-txt-3);
+}
+.mtile__count {
+  font-size: 2.5rem; font-weight: 800; line-height: 1;
+  color: var(--cs-txt); letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; margin-top: 3px;
+}
+.mtile__util {
+  font-size: 1rem; font-weight: 700; line-height: 1;
+  color: var(--cs-txt); font-variant-numeric: tabular-nums;
+}
+.mtile__utilk {
+  font-size: .46rem; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--cs-txt-3); margin-top: 2px;
+}
+
+/* ── machined output scale ──────────────────────────────────── */
+.mscale { margin-top: 16px; }
+.mscale__rail {
+  position: relative; height: 10px; border-radius: 3px;
+  background: var(--cs-track);
+  border: 1px solid var(--cs-border);
+}
+.mscale__fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, #6663B8, #22C55E);
+  transition: width .6s cubic-bezier(.4,0,.2,1);
+}
+.mscale__pace {
+  position: absolute; top: -4px; bottom: -4px; width: 2px;
+  background: var(--cs-txt-2); opacity: .6; border-radius: 2px;
+  transition: left .6s cubic-bezier(.4,0,.2,1);
+}
+.mscale__pace::after {
+  content: ''; position: absolute; top: -4px; left: -2px;
+  border-left: 3px solid transparent; border-right: 3px solid transparent;
+  border-top: 4px solid var(--cs-txt-2);
+}
+.mscale__legend {
+  display: flex; justify-content: space-between; margin-top: 7px;
+  font-size: .6rem; color: var(--cs-txt-3);
+  font-variant-numeric: tabular-nums;
+}
+.mscale__now { font-weight: 700; color: var(--cs-txt-2); }
+
+/* ── footer rail ────────────────────────────────────────────── */
+.mtile__foot {
+  position: relative;
+  display: flex; align-items: stretch;
+  border-top: 1px solid var(--cs-border);
+  background: var(--cs-inset);
+}
+.mtile__cell {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 9px 14px;
+  border-right: 1px solid var(--cs-border);
+}
+.mtile__cell:last-child { border-right: none; }
+.mtile__cell--wide { flex: 1.5; }
+.mtile__ck {
+  font-size: .55rem; text-transform: uppercase; letter-spacing: .13em;
+  color: var(--cs-txt-3);
+}
+.mtile__cv {
+  font-size: .84rem; font-weight: 700; color: var(--cs-txt);
+  font-variant-numeric: tabular-nums;
+}
+
+.mtile.is-off { opacity: .68; }

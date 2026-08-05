@@ -96,118 +96,101 @@
 
     <div *ngFor="let m of pagedMachines; trackBy: trackByMachine"
          (click)="goToLive(m.machine_id)"
-         class="mpanel"
+         class="mtile"
          [ngClass]="{
-           'mpanel--alarm': m.alarm,
-           'mpanel--run':   !m.alarm && m.status === 'RUNNING',
-           'mpanel--idle':  !m.alarm && m.status === 'IDLE',
-           'mpanel--off':   !m.alarm && m.status === 'OFFLINE'
+           'is-alarm': m.alarm,
+           'is-run':   !m.alarm && m.status === 'RUNNING',
+           'is-idle':  !m.alarm && m.status === 'IDLE',
+           'is-off':   !m.alarm && m.status === 'OFFLINE'
          }">
 
-      <!-- header: id + state -->
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="mpanel__id truncate">{{ m.machine_serial_no }}</div>
-          <div class="mpanel__model truncate">{{ m.part_name || 'No active job' }}</div>
+      <!-- ── nameplate ── -->
+      <div class="mtile__plate">
+        <!-- andon stack light: the signal every shop floor already reads -->
+        <div class="andon" [attr.aria-label]="m.alarm ? 'Alarm' : m.status">
+          <span class="andon__lamp andon__lamp--red"></span>
+          <span class="andon__lamp andon__lamp--amber"></span>
+          <span class="andon__lamp andon__lamp--green"></span>
         </div>
 
-        <span class="mstate shrink-0"
-              [ngClass]="{
-                'mstate--alarm': m.alarm,
-                'mstate--run':   !m.alarm && m.status === 'RUNNING',
-                'mstate--idle':  !m.alarm && m.status === 'IDLE',
-                'mstate--off':   !m.alarm && m.status === 'OFFLINE'
-              }">
-          <span class="dot"></span>{{ m.alarm ? 'ALARM' : m.status }}
-        </span>
+        <div class="min-w-0 flex-1">
+          <div class="mtile__id truncate">{{ m.machine_serial_no }}</div>
+          <div class="mtile__part truncate">{{ m.part_name || 'No active job' }}</div>
+        </div>
+
+        <span class="mtile__state">{{ m.alarm ? 'ALARM' : m.status }}</span>
       </div>
 
-      <!-- body: thumb + fields + utilisation ring -->
-      <div class="flex items-center gap-3.5 mt-3.5">
+      <!-- ── readout ── -->
+      <div class="mtile__body">
 
-        <img [src]="m.image_url" class="mpanel__thumb" alt="" />
-
-        <div class="flex-1 min-w-0 space-y-2">
-          <div *ngIf="auth.hasWidget('dashboard', 'operator')" class="min-w-0">
-            <div class="mfield__k">Operator</div>
-            <div class="mfield__v truncate" [title]="m.operator_name || '--'">{{ m.operator_name || '--' }}</div>
+        <div class="flex items-end gap-4">
+          <div class="min-w-0" *ngIf="auth.hasWidget('dashboard', 'partcount')">
+            <div class="mtile__k">Parts this shift</div>
+            <div class="mtile__count">{{ m.achieved_qty || 0 }}</div>
+            <div *ngIf="auth.hasWidget('dashboard', 'target')"
+                 class="pace mt-1" [class.pace--behind]="paceDelta(m) < 0">
+              <svg viewBox="0 0 12 12" class="w-2.5 h-2.5" fill="currentColor" aria-hidden="true">
+                <path *ngIf="paceDelta(m) >= 0" d="M6 2l4 6H2z"/>
+                <path *ngIf="paceDelta(m) < 0"  d="M6 10L2 4h8z"/>
+              </svg>
+              {{ paceDelta(m) >= 0 ? '+' : '' }}{{ paceDelta(m) }}
+              {{ paceDelta(m) >= 0 ? 'ahead' : 'behind' }}
+            </div>
           </div>
 
-          <div class="min-w-0">
-            <div class="mfield__k">Component ID</div>
-            <div class="mfield__v truncate">{{ m.component_id || '--' }}</div>
-          </div>
-        </div>
-
-        <!-- utilisation reads as the card's headline KPI -->
-        <div *ngIf="auth.hasWidget('dashboard', 'utilization')" class="relative shrink-0" style="width:74px; height:74px">
-          <svg viewBox="0 0 62 62" class="w-full h-full -rotate-90">
-            <defs>
-              <linearGradient [attr.id]="'utilG' + m.machine_id" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#6663B8"/><stop offset="1" stop-color="#22C55E"/>
-              </linearGradient>
-            </defs>
-            <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" class="ring-track" stroke-width="6"/>
-            <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" stroke-width="6"
-                    [attr.stroke]="'url(#utilG' + m.machine_id + ')'"
-                    [attr.stroke-linecap]="utilCap(m.utilization)"
-                    [attr.stroke-dasharray]="utilDash(m.utilization)"/>
-          </svg>
-          <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span class="text-[.95rem] font-bold leading-none"
-                  style="color:var(--cs-txt); font-variant-numeric:tabular-nums">{{ m.utilization || 0 | number:'1.0-0' }}%</span>
-            <span class="text-[.48rem] uppercase tracking-[.12em] mt-0.5" style="color:var(--cs-txt-3)">Util</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- metric strip: run / idle / produced -->
-      <div class="mstrip">
-        <div class="mcell" *ngIf="auth.hasWidget('dashboard', 'runtime')">
-          <div class="mcell__k">Run</div>
-          <div class="mcell__v mcell__v--run">
-            {{ (m.run_time || '00:00:00').split(':')[0] }}:{{ (m.run_time || '00:00:00').split(':')[1] }}
-          </div>
-        </div>
-        <div class="mcell" *ngIf="auth.hasWidget('dashboard', 'runtime')">
-          <div class="mcell__k">Idle</div>
-          <div class="mcell__v mcell__v--idle">
-            {{ (m.idle_time || '00:00:00').split(':')[0] }}:{{ (m.idle_time || '00:00:00').split(':')[1] }}
-          </div>
-        </div>
-        <div class="mcell" *ngIf="auth.hasWidget('dashboard', 'partcount')">
-          <div class="mcell__k">Produced</div>
-          <div class="mcell__v">{{ m.achieved_qty || 0 }}</div>
-        </div>
-      </div>
-
-      <!-- production against the pace the shift demands -->
-      <div *ngIf="auth.hasWidget('dashboard', 'target')" class="mt-3">
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="mfield__k">Production</span>
-          <span class="text-[.72rem]" style="color:var(--cs-txt-3)">
-            <b class="font-semibold" style="color:var(--cs-txt)">{{ m.achieved_qty || 0 }}</b> / {{ m.target_qty || 0 }}
-          </span>
-        </div>
-
-        <!-- the marker is where this machine should be by now -->
-        <div class="mprog__track">
-          <div class="mprog__fill" [style.width.%]="productionPct(m)"></div>
-          <div class="mprog__mark" [style.left.%]="shiftProgressPct"></div>
-        </div>
-
-        <div class="flex items-center justify-between mt-1.5">
-          <span class="pace" [class.pace--behind]="paceDelta(m) < 0">
-            <svg viewBox="0 0 12 12" class="w-2.5 h-2.5" fill="currentColor" aria-hidden="true">
-              <path *ngIf="paceDelta(m) >= 0" d="M6 2l4 6H2z"/>
-              <path *ngIf="paceDelta(m) < 0"  d="M6 10L2 4h8z"/>
+          <div *ngIf="auth.hasWidget('dashboard', 'utilization')"
+               class="relative shrink-0 ml-auto" style="width:78px; height:78px">
+            <svg viewBox="0 0 62 62" class="w-full h-full -rotate-90">
+              <defs>
+                <linearGradient [attr.id]="'utilG' + m.machine_id" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#6663B8"/><stop offset="1" stop-color="#22C55E"/>
+                </linearGradient>
+              </defs>
+              <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" class="ring-track" stroke-width="5"/>
+              <circle cx="31" cy="31" [attr.r]="UTIL_R" fill="none" stroke-width="5"
+                      [attr.stroke]="'url(#utilG' + m.machine_id + ')'"
+                      [attr.stroke-linecap]="utilCap(m.utilization)"
+                      [attr.stroke-dasharray]="utilDash(m.utilization)"/>
             </svg>
-            {{ paceDelta(m) >= 0 ? '+' : '' }}{{ paceDelta(m) }}
-            {{ paceDelta(m) >= 0 ? 'ahead' : 'behind' }}
+            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span class="mtile__util">{{ m.utilization || 0 | number:'1.0-0' }}<span class="text-[.6rem]">%</span></span>
+              <span class="mtile__utilk">Util</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- machined scale: fill, pace tick, end stops -->
+        <div *ngIf="auth.hasWidget('dashboard', 'target')" class="mscale">
+          <div class="mscale__rail">
+            <div class="mscale__fill" [style.width.%]="productionPct(m)"></div>
+            <div class="mscale__pace" [style.left.%]="shiftProgressPct"></div>
+          </div>
+          <div class="mscale__legend">
+            <span>0</span>
+            <span class="mscale__now">pace {{ expectedQty(m) }}</span>
+            <span>{{ m.target_qty || 0 }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── footer rail ── -->
+      <div class="mtile__foot">
+        <div class="mtile__cell" *ngIf="auth.hasWidget('dashboard', 'runtime')">
+          <span class="mtile__ck">Run</span>
+          <span class="mtile__cv" style="color:#16A34A">
+            {{ (m.run_time || '00:00:00').split(':')[0] }}:{{ (m.run_time || '00:00:00').split(':')[1] }}
           </span>
-          <span class="text-[.66rem]" style="color:var(--cs-txt-3)">
-            target now {{ expectedQty(m) }}
+        </div>
+        <div class="mtile__cell" *ngIf="auth.hasWidget('dashboard', 'runtime')">
+          <span class="mtile__ck">Idle</span>
+          <span class="mtile__cv" style="color:#CA8A04">
+            {{ (m.idle_time || '00:00:00').split(':')[0] }}:{{ (m.idle_time || '00:00:00').split(':')[1] }}
           </span>
+        </div>
+        <div class="mtile__cell mtile__cell--wide" *ngIf="auth.hasWidget('dashboard', 'operator')">
+          <span class="mtile__ck">Operator</span>
+          <span class="mtile__cv truncate" [title]="m.operator_name || '--'">{{ m.operator_name || '--' }}</span>
         </div>
       </div>
 
