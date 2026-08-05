@@ -1,10 +1,23 @@
-// Brand tokens — kept in sync with the web app's design system (accent #1f5e8c).
+// Brand tokens — pulled directly from FrontendIOT's actual source of truth:
+// the "STM MEXA" logo gradient (public/images/logo/STM_Mexa_logo.svg) and
+// styles.scss (.bg-top-bar, .nav-btn). Navy -> wine -> red is the real STM
+// Mexa identity; the mobile app previously used an unrelated generic blue.
 export const palette = {
-  brand50: '#e8f0f6',
-  brand100: '#c9dcea',
-  brand500: '#1f5e8c',
-  brand600: '#194c72',
-  brand700: '#123a58',
+  navy900: '#102B4E', // "STM" wordmark — darkest anchor
+  navy700: '#2B3990', // gradient start / .nav-btn default / header start
+  wine600: '#863567', // .nav-btn:hover/.active
+  wine500: '#9B3F70', // header gradient end
+  red500: '#EF4136', // gradient tail — used sparingly (danger territory), not as a UI color
+
+  brand50: '#eef0fa',
+  brand100: '#d6d9f0',
+  brand500: '#2B3990', // = navy700, the mobile app's primary accent
+  brand600: '#223070',
+  brand700: '#1a2456',
+
+  // The full logo gradient, for hero surfaces only (header, ring) — never for
+  // text or small UI (a 3-stop gradient on body text or icons reads as noisy).
+  brandGradient: ['#2B3990', '#843D67', '#EF4136'] as const,
 
   ink900: '#182430',
   ink700: '#333f4b',
@@ -72,9 +85,13 @@ export const darkColors: ColorScheme = {
   textPrimary: '#dfe7ee',
   textSecondary: '#a7b6c3',
   textMuted: '#71828f',
-  accent: '#5f9cc8',
-  accentPressed: '#79aed3',
-  onAccent: '#0d1720',
+  // Lighter step of the brand navy — legible on near-black, still reads as
+  // "the same brand" rather than a generic blue (matches the web app's dark
+  // mode, which flattens the gradient header to near-black but keeps the
+  // same brand family for interactive elements).
+  accent: '#8891D6',
+  accentPressed: '#a3abe3',
+  onAccent: '#10142b',
   // Validated pair (scripts/validate_palette.js, dataviz skill, dark surface).
   success: '#4a9a6a',
   successBg: '#173322',

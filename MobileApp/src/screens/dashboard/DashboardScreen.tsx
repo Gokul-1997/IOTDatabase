@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, FlatList, RefreshControl, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
@@ -10,6 +11,7 @@ import { useAuthStore } from '../../store/authStore';
 import { Card } from '../../components/Card';
 import { Skeleton } from '../../components/Skeleton';
 import { FleetUtilizationRing } from '../../components/FleetUtilizationRing';
+import { palette } from '../../theme/colors';
 import * as dashboardApi from '../../api/dashboard';
 import { connectSocket, joinPlant, onMachineUpdate, offMachineUpdate, MachineUpdatePayload } from '../../api/socket';
 import { DashboardMachine, DashboardResponse, MachineStatus } from '../../types/dashboard';
@@ -70,14 +72,12 @@ function FleetStatCell({ value, label, color }: { value: number; label: string; 
   );
 }
 
-function FleetOverviewCard({
-  avgUtilization,
+function FleetStatsCard({
   total,
   running,
   idle,
   offline,
 }: {
-  avgUtilization: number;
   total: number;
   running: number;
   idle: number;
@@ -85,23 +85,11 @@ function FleetOverviewCard({
 }) {
   const theme = useTheme();
   return (
-    <Card style={{ alignItems: 'center', paddingVertical: theme.spacing.xl }}>
-      <FleetUtilizationRing value={avgUtilization} running={running} total={total} />
-      <View
-        style={{
-          flexDirection: 'row',
-          width: '100%',
-          marginTop: theme.spacing.xl,
-          paddingTop: theme.spacing.lg,
-          borderTopWidth: 1,
-          borderTopColor: theme.colors.border,
-        }}
-      >
-        <FleetStatCell value={total} label="Total" color={theme.colors.accent} />
-        <FleetStatCell value={running} label="Running" color={theme.colors.success} />
-        <FleetStatCell value={idle} label="Idle" color={theme.colors.warning} />
-        <FleetStatCell value={offline} label="Offline" color={theme.colors.textMuted} />
-      </View>
+    <Card style={{ flexDirection: 'row', marginTop: -theme.spacing.xl }}>
+      <FleetStatCell value={total} label="Total" color={theme.colors.accent} />
+      <FleetStatCell value={running} label="Running" color={theme.colors.success} />
+      <FleetStatCell value={idle} label="Idle" color={theme.colors.warning} />
+      <FleetStatCell value={offline} label="Offline" color={theme.colors.textMuted} />
     </Card>
   );
 }
@@ -364,49 +352,66 @@ export function DashboardScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }} edges={['top', 'left', 'right']}>
+      {/* Brand hero — same navy -> wine -> red gradient as FrontendIOT's .bg-top-bar
+          (flattened to near-black in dark mode, matching the web app's dark theme). */}
+      <LinearGradient
+        colors={theme.isDark ? ['#0f0f0f', '#0f0f0f'] : [palette.navy700, palette.wine600, palette.red500]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          paddingHorizontal: theme.spacing.lg,
+          paddingTop: theme.spacing.md,
+          paddingBottom: noActiveShift ? theme.spacing.xl : theme.spacing.xxxl,
+          borderBottomLeftRadius: theme.radius.xl,
+          borderBottomRightRadius: theme.radius.xl,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View>
+            <Text style={{ fontSize: theme.type.caption, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              {user?.company_name ?? 'Shop Floor'} {dashboard?.shift ? `· ${dashboard.shift.shift_code}` : ''}
+            </Text>
+            <Text style={{ fontSize: theme.type.title, fontWeight: theme.weight.bold as any, color: '#FFFFFF', marginTop: 2 }}>
+              Hello, {user?.username ?? 'there'}
+            </Text>
+          </View>
+          {lastUpdated && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#7CE6A6' }} />
+              <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>{timeAgo(lastUpdated)}</Text>
+            </View>
+          )}
+        </View>
+
+        {noActiveShift ? (
+          <View style={{ alignItems: 'center', paddingVertical: theme.spacing.xl }}>
+            <Ionicons name="time-outline" size={26} color="rgba(255,255,255,0.75)" />
+            <Text style={{ color: 'rgba(255,255,255,0.85)', marginTop: theme.spacing.sm, textAlign: 'center' }}>
+              No shift is currently active
+            </Text>
+          </View>
+        ) : (
+          <View style={{ marginTop: theme.spacing.lg }}>
+            <FleetUtilizationRing value={summary.avgUtilization} running={summary.running} total={summary.total} />
+          </View>
+        )}
+      </LinearGradient>
+
       <FlatList
         data={machines}
         keyExtractor={(item) => String(item.machine_id)}
-        contentContainerStyle={{ padding: theme.spacing.lg, gap: theme.spacing.md }}
+        contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg, gap: theme.spacing.md }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.accent} />}
         ListHeaderComponent={
           <View style={{ gap: theme.spacing.md, marginBottom: theme.spacing.md }}>
-            <View>
-              <Text style={{ fontSize: theme.type.caption, color: theme.colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                {user?.company_name ?? 'Shop Floor'} {dashboard?.shift ? `· ${dashboard.shift.shift_code}` : ''}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: theme.type.title, fontWeight: theme.weight.bold as any, color: theme.colors.textPrimary, marginTop: 2 }}>
-                  Hello, {user?.username ?? 'there'}
-                </Text>
-                {lastUpdated && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.success }} />
-                    <Text style={{ fontSize: 11, color: theme.colors.textMuted }}>{timeAgo(lastUpdated)}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            {noActiveShift ? (
-              <Card style={{ alignItems: 'center', paddingVertical: theme.spacing.xl }}>
-                <Ionicons name="time-outline" size={26} color={theme.colors.textMuted} />
-                <Text style={{ color: theme.colors.textSecondary, marginTop: theme.spacing.sm, textAlign: 'center' }}>
-                  No shift is currently active
-                </Text>
-              </Card>
-            ) : (
-              <FleetOverviewCard
-                avgUtilization={summary.avgUtilization}
-                total={summary.total}
-                running={summary.running}
-                idle={summary.idle}
-                offline={summary.offline}
-              />
+            {!noActiveShift && (
+              <FleetStatsCard total={summary.total} running={summary.running} idle={summary.idle} offline={summary.offline} />
             )}
 
             {error && (
-              <Text style={{ fontSize: theme.type.caption, color: theme.colors.danger }}>{error} — pull down to retry.</Text>
+              <Text style={{ fontSize: theme.type.caption, color: theme.colors.danger, marginTop: theme.spacing.sm }}>
+                {error} — pull down to retry.
+              </Text>
             )}
 
             {machines.length > 0 && (

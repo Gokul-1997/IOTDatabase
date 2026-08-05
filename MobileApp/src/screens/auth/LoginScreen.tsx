@@ -3,6 +3,7 @@ import { View, Text, Image, Alert } from 'react-native';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
+import { StmMexaLogo } from '../../components/StmMexaLogo';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useAuthStore } from '../../store/authStore';
 
@@ -42,30 +43,9 @@ export function LoginScreen() {
     <ScreenContainer scroll>
       <View style={{ flex: 1, justifyContent: 'center' }}>
         <View style={{ alignItems: 'center', marginBottom: theme.spacing.xxl }}>
-          <View
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: theme.radius.lg,
-              backgroundColor: theme.colors.accent,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: theme.spacing.lg,
-            }}
-          >
-            <Text style={{ color: theme.colors.onAccent, fontSize: theme.type.title, fontWeight: theme.weight.bold as any }}>
-              M
-            </Text>
+          <View style={{ marginBottom: theme.spacing.lg }}>
+            <StmMexaLogo width={168} dark={theme.isDark} />
           </View>
-          <Text
-            style={{
-              fontSize: theme.type.title,
-              fontWeight: theme.weight.bold as any,
-              color: theme.colors.textPrimary,
-            }}
-          >
-            MEXA Monitor
-          </Text>
           <Text style={{ fontSize: theme.type.body, color: theme.colors.textSecondary, marginTop: theme.spacing.xs }}>
             Sign in to your account
           </Text>
