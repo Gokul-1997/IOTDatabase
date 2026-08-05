@@ -9,6 +9,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useAuthStore } from '../../store/authStore';
 import { Card } from '../../components/Card';
 import { Skeleton } from '../../components/Skeleton';
+import { FleetUtilizationRing } from '../../components/FleetUtilizationRing';
 import * as dashboardApi from '../../api/dashboard';
 import { connectSocket, joinPlant, onMachineUpdate, offMachineUpdate, MachineUpdatePayload } from '../../api/socket';
 import { DashboardMachine, DashboardResponse, MachineStatus } from '../../types/dashboard';
@@ -50,92 +51,56 @@ function timeAgo(date: Date | null) {
   return `${Math.floor(sec / 60)}m ago`;
 }
 
-function StatTile({
-  icon,
-  value,
-  label,
-  color,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  value: number;
-  label: string;
-  color: string;
-}) {
+function FleetStatCell({ value, label, color }: { value: number; label: string; color: string }) {
   const theme = useTheme();
   return (
-    <Card style={{ flex: 1, paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.md }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Ionicons name={icon} size={16} color={color} />
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+        <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: color }} />
         <Text
-          style={{
-            fontSize: theme.type.caption,
-            color: theme.colors.textMuted,
-            textTransform: 'uppercase',
-            letterSpacing: 0.4,
-          }}
-          numberOfLines={1}
+          style={{ fontSize: theme.type.title, fontWeight: theme.weight.bold as any, color: theme.colors.textPrimary, fontVariant: ['tabular-nums'] }}
         >
-          {label}
+          {value}
         </Text>
       </View>
-      <Text
-        style={{
-          fontSize: theme.type.title,
-          fontWeight: theme.weight.bold as any,
-          color: theme.colors.textPrimary,
-          marginTop: 4,
-          fontVariant: ['tabular-nums'],
-        }}
-      >
-        {value}
+      <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+        {label}
       </Text>
-    </Card>
+    </View>
   );
 }
 
-function ProportionBar({ running, idle, offline, total }: { running: number; idle: number; offline: number; total: number }) {
+function FleetOverviewCard({
+  avgUtilization,
+  total,
+  running,
+  idle,
+  offline,
+}: {
+  avgUtilization: number;
+  total: number;
+  running: number;
+  idle: number;
+  offline: number;
+}) {
   const theme = useTheme();
-  const safeTotal = Math.max(total, 1);
-
-  const segments: { key: string; value: number; color: string; label: string }[] = [
-    { key: 'running', value: running, color: theme.colors.success, label: 'Running' },
-    { key: 'idle', value: idle, color: theme.colors.warning, label: 'Idle' },
-    { key: 'offline', value: offline, color: theme.colors.textMuted, label: 'Offline' },
-  ];
-
   return (
-    <Card>
+    <Card style={{ alignItems: 'center', paddingVertical: theme.spacing.xl }}>
+      <FleetUtilizationRing value={avgUtilization} running={running} total={total} />
       <View
         style={{
           flexDirection: 'row',
-          height: 10,
-          borderRadius: theme.radius.pill,
-          overflow: 'hidden',
-          backgroundColor: theme.colors.surfaceAlt,
+          width: '100%',
+          marginTop: theme.spacing.xl,
+          paddingTop: theme.spacing.lg,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.border,
         }}
       >
-        {segments.map((s) =>
-          s.value > 0 ? (
-            <View
-              key={s.key}
-              style={{
-                flex: s.value / safeTotal,
-                backgroundColor: s.color,
-                marginRight: 1,
-              }}
-            />
-          ) : null
-        )}
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.lg, marginTop: theme.spacing.md }}>
-        {segments.map((s) => (
-          <View key={s.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: s.color }} />
-            <Text style={{ fontSize: theme.type.caption, color: theme.colors.textSecondary }}>
-              {s.label} <Text style={{ fontWeight: theme.weight.semibold as any, color: theme.colors.textPrimary }}>{s.value}</Text>
-            </Text>
-          </View>
-        ))}
+        <FleetStatCell value={total} label="Total" color={theme.colors.accent} />
+        <FleetStatCell value={running} label="Running" color={theme.colors.success} />
+        <FleetStatCell value={idle} label="Idle" color={theme.colors.warning} />
+        <FleetStatCell value={offline} label="Offline" color={theme.colors.textMuted} />
       </View>
     </Card>
   );
@@ -380,7 +345,10 @@ export function DashboardScreen() {
     const running = machines.filter((m) => m.status === 'RUNNING').length;
     const idle = machines.filter((m) => m.status === 'IDLE').length;
     const offline = machines.filter((m) => m.status === 'OFFLINE').length;
-    return { total: machines.length, running, idle, offline };
+    const avgUtilization = machines.length
+      ? machines.reduce((sum, m) => sum + (m.utilization || 0), 0) / machines.length
+      : 0;
+    return { total: machines.length, running, idle, offline, avgUtilization };
   }, [dashboard]);
 
   if (loading) {
@@ -428,18 +396,13 @@ export function DashboardScreen() {
                 </Text>
               </Card>
             ) : (
-              <>
-                <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-                  <StatTile icon="hardware-chip-outline" value={summary.total} label="Total" color={theme.colors.accent} />
-                  <StatTile icon="play-circle" value={summary.running} label="Running" color={theme.colors.success} />
-                </View>
-                <View style={{ flexDirection: 'row', gap: theme.spacing.md }}>
-                  <StatTile icon="pause-circle" value={summary.idle} label="Idle" color={theme.colors.warning} />
-                  <StatTile icon="cloud-offline-outline" value={summary.offline} label="Offline" color={theme.colors.textMuted} />
-                </View>
-
-                <ProportionBar running={summary.running} idle={summary.idle} offline={summary.offline} total={summary.total} />
-              </>
+              <FleetOverviewCard
+                avgUtilization={summary.avgUtilization}
+                total={summary.total}
+                running={summary.running}
+                idle={summary.idle}
+                offline={summary.offline}
+              />
             )}
 
             {error && (
