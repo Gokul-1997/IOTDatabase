@@ -1902,3 +1902,50 @@ html.dark {
   background: var(--cs-panel-2);
 }
 .dark .ipill.zone-on { background: rgba(255,255,255,.07); }
+
+/* ── Floor summary tiles ─────────────────────────────────────── */
+.stat {
+  border-radius: 16px; padding: 14px 16px;
+  background: linear-gradient(160deg, var(--cs-panel-top) 0%, transparent 65%), var(--cs-panel);
+  border: 1px solid var(--cs-border);
+  box-shadow: var(--cs-shadow);
+}
+.stat__k {
+  font-size: .64rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .12em; color: var(--cs-txt-3);
+}
+.stat__v {
+  font-size: 1.85rem; font-weight: 700; color: var(--cs-txt);
+  line-height: 1.1; margin-top: 4px;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.stat__u { font-size: .8rem; font-weight: 600; color: var(--cs-txt-3); margin-left: 5px; }
+.stat__sub { font-size: .68rem; color: var(--cs-txt-3); margin-top: 3px; }
+
+/* one dot per machine — behind-schedule ones stand out */
+.pacedots { display: flex; gap: 4px; flex-wrap: wrap; }
+.pacedots__d {
+  width: 9px; height: 9px; border-radius: 3px;
+  background: #22C55E;
+  &.behind { background: #FF4D5E; }
+}
+
+/* progress track needs to position the pace marker */
+.mprog__track { position: relative; }
+.mprog__mark {
+  position: absolute; top: -3px; bottom: -3px; width: 2px;
+  background: var(--cs-txt-2); border-radius: 2px;
+  opacity: .55;
+}
+
+/* ahead / behind read-out */
+.pace {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .68rem; font-weight: 700;
+  color: #16A34A;
+}
+.pace--behind { color: #DC2626; }
+.dark {
+  .pace { color: #4ADE80 }
+  .pace--behind { color: #FF8189 }
+}

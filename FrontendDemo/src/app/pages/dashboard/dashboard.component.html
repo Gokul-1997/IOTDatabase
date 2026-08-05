@@ -39,6 +39,58 @@
   </div>
 
 
+  <!-- ══════════ FLOOR SUMMARY ══════════ -->
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+
+    <!-- shift progress gives every other number its context -->
+    <div class="stat">
+      <div class="stat__k">Shift progress</div>
+      <div class="stat__v">{{ shiftProgressPct | number:'1.0-0' }}<span class="stat__u">%</span></div>
+      <div class="stat__sub">{{ fmtMinutes(shift.shiftElapsedMinutes) }} of {{ fmtMinutes(shift.plannedMinutes) }}</div>
+      <div class="mprog__track mt-2.5">
+        <div class="mprog__fill" style="background:linear-gradient(90deg,#8E8CC7,#6663B8)"
+             [style.width.%]="shiftProgressPct"></div>
+      </div>
+    </div>
+
+    <!-- floor output vs plan -->
+    <div class="stat">
+      <div class="stat__k">Floor output</div>
+      <div class="stat__v">{{ floorProduced | number }}<span class="stat__u">/ {{ floorTarget | number }}</span></div>
+      <div class="stat__sub">{{ floorProducedPct | number:'1.0-0' }}% of shift plan</div>
+      <div class="mprog__track mt-2.5">
+        <div class="mprog__fill" [style.width.%]="floorProducedPct"></div>
+        <div class="mprog__mark" [style.left.%]="shiftProgressPct"></div>
+      </div>
+    </div>
+
+    <!-- average utilisation -->
+    <div class="stat">
+      <div class="stat__k">Avg utilisation</div>
+      <div class="stat__v">{{ floorUtilisation | number:'1.0-0' }}<span class="stat__u">%</span></div>
+      <div class="stat__sub">across {{ machines.length }} machines</div>
+      <div class="mprog__track mt-2.5">
+        <div class="mprog__fill" [style.width.%]="floorUtilisation"></div>
+      </div>
+    </div>
+
+    <!-- how many are keeping up -->
+    <div class="stat">
+      <div class="stat__k">On pace</div>
+      <div class="stat__v" [style.color]="onPaceCount === machines.length ? '#16A34A' : (onPaceCount === 0 ? '#DC2626' : null)">
+        {{ onPaceCount }}<span class="stat__u">of {{ machines.length }}</span>
+      </div>
+      <div class="stat__sub">{{ machines.length - onPaceCount }} behind schedule</div>
+      <div class="pacedots mt-2.5">
+        <span *ngFor="let m of machines"
+              class="pacedots__d"
+              [class.behind]="paceDelta(m) < 0"
+              [title]="m.machine_serial_no"></span>
+      </div>
+    </div>
+  </div>
+
+
   <!-- ══════════ MACHINE GRID ══════════ -->
   <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
 
@@ -129,7 +181,7 @@
         </div>
       </div>
 
-      <!-- production progress -->
+      <!-- production against the pace the shift demands -->
       <div *ngIf="auth.hasWidget('dashboard', 'target')" class="mt-3">
         <div class="flex items-center justify-between mb-1.5">
           <span class="mfield__k">Production</span>
@@ -137,9 +189,25 @@
             <b class="font-semibold" style="color:var(--cs-txt)">{{ m.achieved_qty || 0 }}</b> / {{ m.target_qty || 0 }}
           </span>
         </div>
+
+        <!-- the marker is where this machine should be by now -->
         <div class="mprog__track">
-          <div class="mprog__fill"
-               [style.width.%]="m.target_qty ? ((m.achieved_qty || 0) / m.target_qty * 100 > 100 ? 100 : (m.achieved_qty || 0) / m.target_qty * 100) : 0"></div>
+          <div class="mprog__fill" [style.width.%]="productionPct(m)"></div>
+          <div class="mprog__mark" [style.left.%]="shiftProgressPct"></div>
+        </div>
+
+        <div class="flex items-center justify-between mt-1.5">
+          <span class="pace" [class.pace--behind]="paceDelta(m) < 0">
+            <svg viewBox="0 0 12 12" class="w-2.5 h-2.5" fill="currentColor" aria-hidden="true">
+              <path *ngIf="paceDelta(m) >= 0" d="M6 2l4 6H2z"/>
+              <path *ngIf="paceDelta(m) < 0"  d="M6 10L2 4h8z"/>
+            </svg>
+            {{ paceDelta(m) >= 0 ? '+' : '' }}{{ paceDelta(m) }}
+            {{ paceDelta(m) >= 0 ? 'ahead' : 'behind' }}
+          </span>
+          <span class="text-[.66rem]" style="color:var(--cs-txt-3)">
+            target now {{ expectedQty(m) }}
+          </span>
         </div>
       </div>
 

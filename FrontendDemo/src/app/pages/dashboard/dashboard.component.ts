@@ -457,6 +457,60 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   /* ════════════════════════════════════════
+     SHIFT PACE
+     How far through the shift we are, and therefore how much each
+     machine *should* have produced by now. A raw count says nothing
+     without this: 80 of 320 is healthy at 09:00 and alarming at 13:00.
+  ════════════════════════════════════════ */
+  get shiftProgressPct(): number {
+    const elapsed = Number(this.shift?.shiftElapsedMinutes || 0);
+    const planned = Number(this.shift?.plannedMinutes || 0);
+    return planned > 0 ? Math.min(100, (elapsed / planned) * 100) : 0;
+  }
+
+  /** parts this machine should have made by this point in the shift */
+  expectedQty(m: any): number {
+    return Math.round((Number(m?.target_qty) || 0) * this.shiftProgressPct / 100);
+  }
+
+  /** + ahead of schedule, − behind */
+  paceDelta(m: any): number {
+    return (Number(m?.achieved_qty) || 0) - this.expectedQty(m);
+  }
+
+  /** progress-bar fill, clamped */
+  productionPct(m: any): number {
+    const t = Number(m?.target_qty) || 0;
+    if (!t) return 0;
+    return Math.min(100, ((Number(m?.achieved_qty) || 0) / t) * 100);
+  }
+
+  /* ── floor-wide rollup (all machines, not just this page) ── */
+  get floorProduced(): number {
+    return this.machines.reduce((s, m: any) => s + (Number(m.achieved_qty) || 0), 0);
+  }
+  get floorTarget(): number {
+    return this.machines.reduce((s, m: any) => s + (Number(m.target_qty) || 0), 0);
+  }
+  get floorProducedPct(): number {
+    return this.floorTarget > 0 ? Math.min(100, (this.floorProduced / this.floorTarget) * 100) : 0;
+  }
+  get floorUtilisation(): number {
+    if (!this.machines.length) return 0;
+    const sum = this.machines.reduce((s, m: any) => s + (Number(m.utilization) || 0), 0);
+    return sum / this.machines.length;
+  }
+  get onPaceCount(): number {
+    return this.machines.filter((m: any) => this.paceDelta(m) >= 0).length;
+  }
+
+  /** "3h 57m" from a minute count */
+  fmtMinutes(mins: any): string {
+    const total = Math.max(0, Math.floor(Number(mins) || 0));
+    return `${Math.floor(total / 60)}h ${String(total % 60).padStart(2, '0')}m`;
+  }
+
+  /* ════════════════════════════════════════
      UTILISATION RING (per card)
   ════════════════════════════════════════ */
   readonly UTIL_R = 26;
