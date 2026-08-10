@@ -28,8 +28,34 @@ export class ProgramService {
     return this.http.get(`${this.api}/${id}/download`, { responseType: 'blob' });
   }
 
-  transfer(programId: number, machineId: number) {
-    return this.http.post<any>(`${this.api}/${programId}/transfer/${machineId}`, {});
+  /** Send one program. Without overwrite the API replies 409 FILE_EXISTS
+   *  when the file is already on the controller. */
+  transfer(programId: number, machineId: number, overwrite = false) {
+    return this.http.post<any>(`${this.api}/${programId}/transfer/${machineId}`, { overwrite });
+  }
+
+  /** Send several programs to several machines in one action. */
+  transferBatch(programIds: number[], machineIds: number[], overwrite = false) {
+    return this.http.post<any>(`${this.api}/transfer-batch`, {
+      program_ids: programIds, machine_ids: machineIds, overwrite
+    });
+  }
+
+  /** Files currently sitting on the controller. */
+  getMachineFiles(machineId: number, search = '') {
+    return this.http.get<any>(`${this.api}/machine/${machineId}/files`, {
+      params: search ? { search } : {}
+    });
+  }
+
+  /** Is the controller reachable right now? */
+  getMachineStatus(machineId: number) {
+    return this.http.get<any>(`${this.api}/machine/${machineId}/status`);
+  }
+
+  /** Pull a program off the controller into the server library. */
+  fetchFromMachine(machineId: number, fileName: string) {
+    return this.http.post<any>(`${this.api}/machine/${machineId}/fetch`, { file_name: fileName });
   }
 
   getTransfers(params: any = {}) {

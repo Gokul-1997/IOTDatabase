@@ -31,6 +31,16 @@ router.get('/transfers', auth, controller.getTransfers);
 // Test FTP connection (body: machine_id and/or ip_address, ftp_port, ftp_user, ftp_pass)
 router.post('/test-connection', auth, controller.testConnection);
 
+/* ── controller-side file browser ──
+   Literal segments before the /:id routes so "machine" is never read
+   as a program id. */
+router.get('/machine/:machineId/files',  auth, controller.listMachinePrograms);
+router.get('/machine/:machineId/status', auth, controller.getMachineStatus);
+router.post('/machine/:machineId/fetch', auth, controller.fetchFromMachine);
+
+// Send several programs to several machines in one action
+router.post('/transfer-batch', auth, controller.transferBatch);
+
 // Download original program file
 router.get('/:id/download', auth, controller.downloadProgram);
 

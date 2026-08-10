@@ -43,6 +43,49 @@ exports.transferProgram = async (req, res) => {
     const data = await service.transferProgram(req);
     res.json({ status: 'success', data, message: 'Program transferred to machine' });
   } catch (e) {
+    // 409 carries a code so the UI can offer "overwrite?" instead of a plain error
+    res.status(e.status || 400).json({ status: 'error', code: e.code, message: e.message });
+  }
+};
+
+exports.transferBatch = async (req, res) => {
+  try {
+    const data = await service.transferBatch(req);
+    res.json({
+      status: 'success',
+      data,
+      message: `${data.succeeded} of ${data.total} transfers completed`
+    });
+  } catch (e) {
+    res.status(e.status || 400).json({ status: 'error', code: e.code, message: e.message });
+  }
+};
+
+exports.listMachinePrograms = async (req, res) => {
+  try {
+    const data = await service.listMachinePrograms(req);
+    res.json({ status: 'success', data, total: data.length });
+  } catch (e) {
+    res.status(e.status || 502).json({ status: 'error', message: e.message });
+  }
+};
+
+exports.fetchFromMachine = async (req, res) => {
+  try {
+    const data = await service.fetchFromMachine(req);
+    res.json({ status: 'success', data, message: 'Program retrieved from machine' });
+  } catch (e) {
+    res.status(e.status || 400).json({ status: 'error', message: e.message });
+  }
+};
+
+exports.getMachineStatus = async (req, res) => {
+  try {
+    // Reachability is a result, not an error — an offline machine still 200s
+    // so the indicator can render "offline" rather than failing the request.
+    const data = await service.getMachineStatus(req);
+    res.json({ status: 'success', data });
+  } catch (e) {
     res.status(e.status || 400).json({ status: 'error', message: e.message });
   }
 };

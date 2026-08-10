@@ -168,6 +168,28 @@ export class SocketService {
 
   }
 
+  /* ================= PROGRAM TRANSFER PROGRESS ================= */
+
+  /** Byte-level progress for transfers this user started. The server emits
+   *  into a per-user room, so no filtering is needed here. */
+  onTransferProgress(callback: (data: any) => void): void {
+
+    if (!this.socket) return;
+
+    this.socket.off('programTransferProgress');
+
+    this.socket.on('programTransferProgress', (data) => {
+      // deliberately not gated on `paused` — that pauses dashboard polling,
+      // but a transfer the user just started must keep reporting.
+      this.zone.run(() => callback(data));
+    });
+  }
+
+  offTransferProgress(): void {
+    if (!this.socket) return;
+    this.socket.off('programTransferProgress');
+  }
+
   /* ================= PAUSE / RESUME ================= */
 
   pauseUpdates(): void {
