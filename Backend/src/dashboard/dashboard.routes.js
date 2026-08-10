@@ -6,6 +6,8 @@ const auth = require('../middleware/auth.middleware');
 router.get('/', auth, ctrl.dashboard);
 
 
+router.get('/factory', auth, ctrl.factory);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 

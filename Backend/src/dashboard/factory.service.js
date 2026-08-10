@@ -1,0 +1,288 @@
+/*
+ * Phase 2 · Screen 1 — Factory Overall Dashboard.
+ *
+ * One aggregate for the whole shop floor, filterable by shift, machine
+ * and date. Everything here reads the rollup tables the MQTT processor
+ * maintains (production_hourly, oee_hourly) rather than telemetry_raw —
+ * same source the machine dashboard uses, so the two always agree.
+ *
+ * The existing dashboard.service covers the per-machine grid; this is
+ * the factory-level view that sits above it.
+ */
+const db = require('../db');
+
+/* Alarm severities are stored as LOW/MEDIUM/HIGH/CRITICAL, but the
+   agreement asks for Critical / Non-Critical / Information. */
+const SEVERITY_CLASS = `
+  CASE
+    WHEN severity = 'CRITICAL'        THEN 'CRITICAL'
+    WHEN severity IN ('HIGH','MEDIUM') THEN 'NON_CRITICAL'
+    ELSE 'INFORMATION'
+  END`;
+
+/**
+ * Resolve the reporting window.
+ * A date alone means that whole day; adding a shift narrows it to that
+ * shift's window, handling the overnight case where a shift starts on
+ * one date and ends on the next.
+ */
+async function resolveWindow(companyId, { date, shift_id }) {
+  const day = date || new Date().toISOString().slice(0, 10);
+
+  if (!shift_id) {
+    return {
+      from: `${day}T00:00:00+05:30`,
+      to:   `${day}T23:59:59.999+05:30`,
+      day,
+      shift: null
+    };
+  }
+
+  const { rows, rowCount } = await db.query(
+    `SELECT id, shift_code, start_time, end_time
+     FROM shifts WHERE id = $1 AND company_id = $2`,
+    [shift_id, companyId]
+  );
+  if (rowCount === 0) throw new Error('Shift not found or access denied');
+
+  const shift = rows[0];
+  const overnight = String(shift.start_time) > String(shift.end_time);
+
+  // an overnight shift dated the 5th runs 05→06
+  const endDay = overnight
+    ? new Date(new Date(`${day}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10)
+    : day;
+
+  return {
+    from: `${day}T${shift.start_time}+05:30`,
+    to:   `${endDay}T${shift.end_time}+05:30`,
+    day,
+    shift
+  };
+}
+
+/** WHERE fragment + params shared by the rollup queries. */
+function scope(companyId, win, machineId, startIdx = 1) {
+  const params = [companyId, win.from, win.to];
+  let sql = `company_id = $${startIdx} AND hour_start >= $${startIdx + 1} AND hour_start < $${startIdx + 2}`;
+  if (machineId) {
+    params.push(machineId);
+    sql += ` AND machine_id = $${startIdx + 3}`;
+  }
+  return { sql, params };
+}
+
+exports.getFactoryDashboard = async (req) => {
+  const companyId  = req.user.company_id;
+  const machineId  = req.query.machine_id ? Number(req.query.machine_id) : null;
+  const win        = await resolveWindow(companyId, req.query);
+
+  const s = scope(companyId, win, machineId);
+
+  const [
+    settingsRes, machineRes, prodRes, oeeRes,
+    shiftRes, downtimeRes, alarmRes, energyRes, planRes
+  ] = await Promise.all([
+
+    /* company tariff — cost is unavailable rather than zero when unset */
+    db.query(
+      `SELECT energy_rate_per_kwh, currency, oee_target_percent
+       FROM company_settings WHERE company_id = $1`, [companyId]
+    ),
+
+    /* live machine states: running / idle / breakdown */
+    db.query(`
+      WITH latest AS (
+        SELECT DISTINCT ON (t.machine_id)
+               t.machine_id, t.machine_status, t.alarm, t.received_at
+        FROM telemetry_raw t
+        JOIN machines m ON m.id = t.machine_id
+        WHERE m.company_id = $1 AND m.is_active
+          ${machineId ? 'AND t.machine_id = $2' : ''}
+        ORDER BY t.machine_id, t.received_at DESC
+      )
+      SELECT
+        (SELECT COUNT(*) FROM machines
+          WHERE company_id = $1 AND is_active ${machineId ? 'AND id = $2' : ''})::int AS total,
+        COUNT(*) FILTER (
+          WHERE alarm IS NOT TRUE AND machine_status = 'RUNNING'
+            AND received_at > NOW() - INTERVAL '60 seconds')::int AS running,
+        COUNT(*) FILTER (
+          WHERE alarm IS NOT TRUE AND machine_status = 'IDLE'
+            AND received_at > NOW() - INTERVAL '60 seconds')::int AS idle,
+        COUNT(*) FILTER (WHERE alarm IS TRUE)::int AS breakdown,
+        COUNT(*) FILTER (WHERE received_at <= NOW() - INTERVAL '60 seconds')::int AS offline
+      FROM latest`,
+      machineId ? [companyId, machineId] : [companyId]
+    ),
+
+    /* production + run/idle + energy for the window */
+    db.query(`
+      SELECT COALESCE(SUM(produced_qty),0)::int   AS produced,
+             COALESCE(SUM(run_seconds),0)::int    AS run_seconds,
+             COALESCE(SUM(idle_seconds),0)::int   AS idle_seconds,
+             COALESCE(SUM(energy_kwh),0)::float   AS energy_kwh
+      FROM production_hourly WHERE ${s.sql}`, s.params
+    ),
+
+    /* OEE averaged across the window */
+    db.query(`
+      SELECT ROUND(AVG(availability)::numeric,2)::float AS availability,
+             ROUND(AVG(performance)::numeric,2)::float  AS performance,
+             ROUND(AVG(quality)::numeric,2)::float      AS quality,
+             ROUND(AVG(oee)::numeric,2)::float          AS oee
+      FROM oee_hourly WHERE ${s.sql}`, s.params
+    ),
+
+    /* shift-wise production bar chart (whole day, ignores shift filter
+       on purpose — the point of the chart is to compare shifts) */
+    db.query(`
+      SELECT sh.shift_code,
+             COALESCE(SUM(p.produced_qty),0)::int AS produced
+      FROM shifts sh
+      LEFT JOIN production_hourly p
+        ON p.shift_id = sh.id
+       AND p.company_id = sh.company_id
+       AND p.hour_start >= $2 AND p.hour_start < $3
+       ${machineId ? 'AND p.machine_id = $4' : ''}
+      WHERE sh.company_id = $1 AND sh.is_active
+      GROUP BY sh.id, sh.shift_code
+      ORDER BY sh.shift_code`,
+      machineId
+        ? [companyId, `${win.day}T00:00:00+05:30`, `${win.day}T23:59:59.999+05:30`, machineId]
+        : [companyId, `${win.day}T00:00:00+05:30`, `${win.day}T23:59:59.999+05:30`]
+    ),
+
+    /* downtime split by reason and planned/unplanned */
+    db.query(`
+      SELECT COALESCE(r.name,'Unclassified') AS reason,
+             COALESCE(r.category,'UNPLANNED') AS category,
+             COALESCE(SUM(d.duration_seconds),0)::int AS seconds,
+             COUNT(*)::int AS events
+      FROM downtime_events d
+      LEFT JOIN downtime_reasons r ON r.id = d.downtime_reason_id
+      WHERE d.company_id = $1 AND d.started_at >= $2 AND d.started_at < $3
+        ${machineId ? 'AND d.machine_id = $4' : ''}
+      GROUP BY r.name, r.category
+      ORDER BY seconds DESC`,
+      machineId ? [companyId, win.from, win.to, machineId] : [companyId, win.from, win.to]
+    ),
+
+    /* alarm summary by class */
+    db.query(`
+      SELECT ${SEVERITY_CLASS} AS class,
+             COUNT(*)::int AS count,
+             COUNT(*) FILTER (WHERE is_resolved IS NOT TRUE)::int AS open
+      FROM machine_alarms
+      WHERE company_id = $1 AND started_at >= $2 AND started_at < $3
+        ${machineId ? 'AND machine_id = $4' : ''}
+      GROUP BY 1`,
+      machineId ? [companyId, win.from, win.to, machineId] : [companyId, win.from, win.to]
+    ),
+
+    /* hourly energy + production trend */
+    db.query(`
+      SELECT hour_start,
+             COALESCE(SUM(energy_kwh),0)::float AS kwh,
+             COALESCE(SUM(produced_qty),0)::int AS produced
+      FROM production_hourly WHERE ${s.sql}
+      GROUP BY hour_start ORDER BY hour_start`, s.params
+    ),
+
+    /* planned quantity for actual-vs-planned */
+    db.query(`
+      SELECT COALESCE(SUM(planned_qty),0)::int AS planned
+      FROM production_plans
+      WHERE company_id = $1 AND plan_date = $2::date
+        ${machineId ? 'AND machine_id = $3' : ''}`,
+      machineId ? [companyId, win.day, machineId] : [companyId, win.day]
+    )
+  ]);
+
+  const settings   = settingsRes.rows[0] || {};
+  const rate       = Number(settings.energy_rate_per_kwh || 0);
+  const prod       = prodRes.rows[0];
+  const planned    = planRes.rows[0]?.planned || 0;
+
+  /* month-to-date energy, for the monthly cost figure */
+  const monthRes = await db.query(`
+    SELECT COALESCE(SUM(energy_kwh),0)::float AS kwh
+    FROM production_hourly
+    WHERE company_id = $1
+      AND hour_start >= date_trunc('month', $2::date)
+      AND hour_start <  (date_trunc('month', $2::date) + INTERVAL '1 month')
+      ${machineId ? 'AND machine_id = $3' : ''}`,
+    machineId ? [companyId, win.day, machineId] : [companyId, win.day]
+  );
+
+  const alarmBy = Object.fromEntries(alarmRes.rows.map(r => [r.class, r]));
+  const dtRows  = downtimeRes.rows;
+  const dtTotal = dtRows.reduce((a, r) => a + r.seconds, 0);
+
+  return {
+    filters: {
+      date: win.day,
+      shift_id: win.shift?.id || null,
+      shift_code: win.shift?.shift_code || null,
+      machine_id: machineId
+    },
+    updated_at: new Date().toISOString(),
+
+    machines: machineRes.rows[0],
+
+    production: {
+      produced: prod.produced,
+      planned,
+      // "overall production percentage" — actual against plan
+      percent: planned > 0 ? Number(((prod.produced / planned) * 100).toFixed(1)) : null
+    },
+
+    time: {
+      run_seconds:  prod.run_seconds,
+      idle_seconds: prod.idle_seconds,
+      down_seconds: dtTotal
+    },
+
+    oee: {
+      availability: oeeRes.rows[0]?.availability ?? 0,
+      performance:  oeeRes.rows[0]?.performance  ?? 0,
+      quality:      oeeRes.rows[0]?.quality      ?? 0,
+      oee:          oeeRes.rows[0]?.oee          ?? 0,
+      target:       Number(settings.oee_target_percent || 85)
+    },
+
+    energy: {
+      kwh:        Number(prod.energy_kwh.toFixed(3)),
+      month_kwh:  Number((monthRes.rows[0]?.kwh || 0).toFixed(3)),
+      currency:   settings.currency || 'INR',
+      rate_per_kwh: rate || null,
+      // null, not 0, when no tariff is configured — a zero here would
+      // read as "electricity is free" rather than "not set up yet"
+      cost_day:   rate ? Number((prod.energy_kwh * rate).toFixed(2)) : null,
+      cost_month: rate ? Number(((monthRes.rows[0]?.kwh || 0) * rate).toFixed(2)) : null
+    },
+
+    shiftwise: shiftRes.rows,
+
+    downtime: {
+      total_seconds:     dtTotal,
+      planned_seconds:   dtRows.filter(r => r.category === 'PLANNED').reduce((a, r) => a + r.seconds, 0),
+      unplanned_seconds: dtRows.filter(r => r.category !== 'PLANNED').reduce((a, r) => a + r.seconds, 0),
+      by_reason:         dtRows
+    },
+
+    alarms: {
+      total:        alarmRes.rows.reduce((a, r) => a + r.count, 0),
+      critical:     alarmBy.CRITICAL?.count     || 0,
+      non_critical: alarmBy.NON_CRITICAL?.count || 0,
+      information:  alarmBy.INFORMATION?.count  || 0,
+      open:         alarmRes.rows.reduce((a, r) => a + r.open, 0)
+    },
+
+    trend: energyRes.rows.map(r => ({
+      hour:     r.hour_start,
+      kwh:      Number(r.kwh.toFixed(3)),
+      produced: r.produced
+    }))
+  };
+};
