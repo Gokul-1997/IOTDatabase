@@ -12,12 +12,17 @@
 
 jest.mock('../../src/db', () => require('../helpers/mockDb').mockDb);
 jest.mock('../../src/programs/program.transfer', () => ({
-  sendProgramToMachine: jest.fn(),
-  testMachineConnection: jest.fn()
+  sendProgramToMachine:    jest.fn(),
+  fetchProgramFromMachine: jest.fn(),
+  listMachineFiles:        jest.fn(),
+  machineFileExists:       jest.fn(),
+  testMachineConnection:   jest.fn()
 }));
 
 const { mockDb, resetDb } = require('../helpers/mockDb');
-const { sendProgramToMachine, testMachineConnection } = require('../../src/programs/program.transfer');
+const {
+  sendProgramToMachine, machineFileExists, testMachineConnection
+} = require('../../src/programs/program.transfer');
 const svc = require('../../src/programs/program.service');
 
 const user = { id: 7, company_id: 3 };
@@ -25,7 +30,10 @@ const user = { id: 7, company_id: 3 };
 beforeEach(() => {
   resetDb();
   sendProgramToMachine.mockReset();
+  machineFileExists.mockReset();
   testMachineConnection.mockReset();
+  // default: nothing on the controller, so transfers are not blocked
+  machineFileExists.mockResolvedValue(false);
 });
 
 describe('program.service.createProgram', () => {
@@ -85,7 +93,9 @@ describe('program.service.transferProgram', () => {
     const result = await svc.transferProgram(req);
 
     expect(result).toEqual({ transfer_id: 99, status: 'SUCCESS' });
-    expect(sendProgramToMachine).toHaveBeenCalledWith(machineRow, programRow.content, 'O1234.nc');
+    expect(sendProgramToMachine).toHaveBeenCalledWith(
+      machineRow, programRow.content, 'O1234.nc', expect.any(Function)
+    );
 
     const update = mockDb.calls()[3];
     expect(update.text).toMatch(/SET status = 'SUCCESS'/);
@@ -109,6 +119,38 @@ describe('program.service.transferProgram', () => {
     const update = mockDb.calls()[3];
     expect(update.text).toMatch(/SET status = 'FAILED'/);
     expect(update.params).toEqual([100, 'connect ETIMEDOUT 192.168.1.101:21']);
+  });
+
+  test('refuses to overwrite a program already on the controller', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 }
+    );
+    machineFileExists.mockResolvedValue(true);
+
+    // Silently replacing a file the operator may be mid-cut on is the
+    // failure this guard exists to prevent.
+    await expect(svc.transferProgram(req)).rejects.toMatchObject({
+      status: 409,
+      code: 'FILE_EXISTS'
+    });
+    expect(sendProgramToMachine).not.toHaveBeenCalled();
+  });
+
+  test('overwrite:true sends even when the file is already there', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 },
+      { rows: [{ id: 101 }], rowCount: 1 },
+      { rows: [], rowCount: 1 }
+    );
+    machineFileExists.mockResolvedValue(true);
+    sendProgramToMachine.mockResolvedValue();
+
+    const result = await svc.transferProgram({ ...req, body: { overwrite: true } });
+
+    expect(result).toEqual({ transfer_id: 101, status: 'SUCCESS' });
+    expect(sendProgramToMachine).toHaveBeenCalled();
   });
 
   test('throws when program not found', async () => {

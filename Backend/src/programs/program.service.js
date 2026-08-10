@@ -220,7 +220,7 @@ async function uploadOne({ program, machine, user, overwrite }) {
     );
 
     await pool.query(
-      `UPDATE program_transfers SET status='SUCCESS', finished_at=NOW() WHERE id=$1`,
+      `UPDATE program_transfers SET status = 'SUCCESS', finished_at = NOW() WHERE id = $1`,
       [transferId]
     );
     await notifyTransfer({
@@ -231,7 +231,7 @@ async function uploadOne({ program, machine, user, overwrite }) {
     return { transfer_id: transferId, status: 'SUCCESS' };
   } catch (err) {
     await pool.query(
-      `UPDATE program_transfers SET status='FAILED', error_message=$2, finished_at=NOW() WHERE id=$1`,
+      `UPDATE program_transfers SET status = 'FAILED', error_message = $2, finished_at = NOW() WHERE id = $1`,
       [transferId, err.message]
     );
     await notifyTransfer({
@@ -365,7 +365,7 @@ exports.fetchFromMachine = async (req) => {
     return { transfer_id: transferId, status: 'SUCCESS', program };
   } catch (err) {
     await pool.query(
-      `UPDATE program_transfers SET status='FAILED', error_message=$2, finished_at=NOW() WHERE id=$1`,
+      `UPDATE program_transfers SET status = 'FAILED', error_message = $2, finished_at = NOW() WHERE id = $1`,
       [transferId, err.message]
     );
     await notifyTransfer({
