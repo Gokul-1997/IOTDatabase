@@ -139,10 +139,10 @@
 </div>
 
 <!-- ─────────── CREATE/EDIT COMPANY MODAL ─────────── -->
-<div *ngIf="showModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
-      <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+<div *ngIf="showModal" class="ui-overlay">
+  <div class="ui-dialog">
+    <div class="ui-dialog-header">
+      <h2 class="ui-dialog-title">
         {{ isEditing ? 'Edit Company' : 'Create New Company' }}
       </h2>
       <button (click)="closeModal()" class="text-gray-400 hover:text-gray-600">
@@ -151,37 +151,37 @@
         </svg>
       </button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="ui-dialog-body space-y-4">
       <div>
-        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Company Code *</label>
+        <label class="ui-label">Company Code *</label>
         <input [(ngModel)]="form.company_code" type="text" [disabled]="isEditing"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
+          class="ui-input"
           placeholder="e.g., ACME">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Company Name *</label>
+        <label class="ui-label">Company Name *</label>
         <input [(ngModel)]="form.company_name" type="text"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+          class="ui-input"
           placeholder="e.g., Acme Manufacturing Ltd.">
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Email</label>
+          <label class="ui-label">Email</label>
           <input [(ngModel)]="form.contact_email" type="email"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            class="ui-input"
             placeholder="admin&#64;acme.com">
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Phone</label>
+          <label class="ui-label">Phone</label>
           <input [(ngModel)]="form.contact_phone" type="text"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            class="ui-input"
             placeholder="+91-XXXX">
         </div>
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Address</label>
+        <label class="ui-label">Address</label>
         <textarea [(ngModel)]="form.address" rows="2"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+          class="ui-input"
           placeholder="City, State"></textarea>
       </div>
 
@@ -196,27 +196,27 @@
         <p class="text-xs text-gray-400 mb-3">This user will manage users & roles for this company. Password will be auto-generated and sent via email.</p>
         <div class="space-y-3">
           <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Admin Username *</label>
+            <label class="ui-label">Admin Username *</label>
             <input [(ngModel)]="form.admin_username" type="text"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              class="ui-input"
               placeholder="e.g., acme_admin">
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Admin Email *</label>
+            <label class="ui-label">Admin Email *</label>
             <input [(ngModel)]="form.admin_email" type="email"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              class="ui-input"
               placeholder="admin@company.com">
           </div>
         </div>
       </div>
     </div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+    <div class="ui-dialog-footer">
       <button (click)="closeModal()"
-        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 text-sm font-medium">
+        class="ui-btn ui-btn-ghost">
         Cancel
       </button>
       <button (click)="saveCompany()" [disabled]="loading"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+        class="ui-btn ui-btn-primary">
         {{ loading ? 'Saving...' : (isEditing ? 'Update' : 'Create') }}
       </button>
     </div>
@@ -224,11 +224,11 @@
 </div>
 
 <!-- ─────────── ASSIGN PLAN MODAL ─────────── -->
-<div *ngIf="showPlanModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg">
-    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
+<div *ngIf="showPlanModal" class="ui-overlay">
+  <div class="ui-dialog">
+    <div class="ui-dialog-header">
       <div>
-        <h2 class="text-xl font-bold text-gray-800 dark:text-white">Assign Plan</h2>
+        <h2 class="ui-dialog-title">Assign Plan</h2>
         <p class="text-sm text-gray-500 mt-0.5">{{ selectedCompany?.company_name }} — set resource limits</p>
       </div>
       <button (click)="closePlanModal()" class="text-gray-400 hover:text-gray-600">
@@ -289,13 +289,13 @@
         <p class="text-xs text-gray-400 mt-1">Leave blank to use the plan's default limits</p>
       </div>
     </div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+    <div class="ui-dialog-footer">
       <button (click)="closePlanModal()"
-        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 text-sm font-medium">
+        class="ui-btn ui-btn-ghost">
         Cancel
       </button>
       <button (click)="assignPlan()" [disabled]="loading"
-        class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium">
+        class="ui-btn ui-btn-primary">
         {{ loading ? 'Assigning...' : 'Assign Plan' }}
       </button>
     </div>
@@ -303,17 +303,17 @@
 </div>
 
 <!-- ─────────── MANAGE PAGE ACCESS MODAL ─────────── -->
-<div *ngIf="showAccessModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+<div *ngIf="showAccessModal" class="ui-overlay">
+  <div class="ui-dialog ui-dialog-lg">
     <!-- Header -->
     <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
       <div>
-        <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+        <h2 class="ui-dialog-title">
           Manage Access: <span class="text-emerald-600">{{ accessCompany?.company_name }}</span>
         </h2>
         <p class="text-sm text-gray-500 mt-0.5">Select which pages and actions this company can access (based on payment)</p>
       </div>
-      <button (click)="closeAccessModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+      <button (click)="closeAccessModal()" class="ui-close" aria-label="Close">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
@@ -385,11 +385,11 @@
       </span>
       <div class="flex gap-3">
         <button (click)="closeAccessModal()"
-          class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+          class="ui-btn ui-btn-ghost">
           Cancel
         </button>
         <button (click)="saveCompanyAccess()" [disabled]="accessLoading"
-          class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-medium">
+          class="ui-btn ui-btn-primary">
           {{ accessLoading ? 'Saving...' : 'Save Access' }}
         </button>
       </div>
@@ -398,17 +398,17 @@
 </div>
 
 <!-- ─────────── DETAIL MODAL ─────────── -->
-<div *ngIf="showDetailModal && detailCompany" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
-      <h2 class="text-xl font-bold text-gray-800 dark:text-white">{{ detailCompany.company_name }}</h2>
+<div *ngIf="showDetailModal && detailCompany" class="ui-overlay">
+  <div class="ui-dialog">
+    <div class="ui-dialog-header">
+      <h2 class="ui-dialog-title">{{ detailCompany.company_name }}</h2>
       <button (click)="closeDetailModal()" class="text-gray-400 hover:text-gray-600">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="ui-dialog-body space-y-4">
       <div class="grid grid-cols-2 gap-3 text-sm">
         <div><span class="text-gray-500">Code:</span> <strong>{{ detailCompany.company_code }}</strong></div>
         <div><span class="text-gray-500">Plan:</span>
@@ -455,7 +455,7 @@
     </div>
     <div class="flex justify-end px-6 py-4 border-t border-gray-100 dark:border-gray-700">
       <button (click)="closeDetailModal()"
-        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium">
+        class="ui-btn ui-btn-ghost">
         Close
       </button>
     </div>
@@ -463,13 +463,13 @@
 </div>
 
 <!-- ─────────── PLANTS MODAL ─────────── -->
-<div *ngIf="showPlantsModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+<div *ngIf="showPlantsModal" class="ui-overlay">
+  <div class="ui-dialog ui-dialog-lg">
 
     <!-- Header -->
     <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
       <div>
-        <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+        <h2 class="ui-dialog-title">
           Plants — <span class="text-teal-600">{{ plantsCompany?.company_name }}</span>
         </h2>
         <p class="text-sm text-gray-500 mt-0.5">Manage plants for this company</p>
@@ -496,19 +496,19 @@
         <div>
           <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Plant Code *</label>
           <input [(ngModel)]="plantForm.plant_code" [disabled]="!!plantFormData"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none disabled:opacity-50"
+            class="ui-input"
             placeholder="PLT-001">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Plant Name *</label>
           <input [(ngModel)]="plantForm.plant_name"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+            class="ui-input"
             placeholder="Chennai Plant">
         </div>
         <div>
           <label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Location</label>
           <input [(ngModel)]="plantForm.location"
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+            class="ui-input"
             placeholder="City, State">
         </div>
       </div>
@@ -582,7 +582,7 @@
         <span *ngIf="plantsCompany?.max_plants"> / {{ plantsCompany.max_plants }} allowed</span>
       </span>
       <button (click)="closePlantsModal()"
-        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium">Close</button>
+        class="ui-btn ui-btn-ghost">Close</button>
     </div>
 
   </div>

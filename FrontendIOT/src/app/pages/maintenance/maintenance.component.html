@@ -18,6 +18,11 @@
 
   <!-- Tabs -->
   <div class="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-6">
+    <button (click)="setTab('tickets')"
+      class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+      [class]="activeTab === 'tickets' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'">
+      Tickets
+    </button>
     <button (click)="setTab('schedules')"
       class="px-4 py-2 rounded-md text-sm font-medium transition-all"
       [class]="activeTab === 'schedules' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'">
@@ -35,6 +40,148 @@
     </button>
   </div>
 
+  <!-- Tickets -->
+  <div *ngIf="activeTab === 'tickets'">
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+        <button (click)="setTicketFilter('open')" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+          [class]="ticketFilter === 'open' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'">Open</button>
+        <button (click)="setTicketFilter('all')" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+          [class]="ticketFilter === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'">All</button>
+      </div>
+      <button (click)="showTicketForm=!showTicketForm" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors">+ Create Ticket</button>
+    </div>
+
+    <div *ngIf="showTicketForm" class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+      <h3 class="font-semibold text-gray-800 mb-3">Create Maintenance Ticket</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <select [(ngModel)]="ticketForm.machine_id" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option [ngValue]="''" disabled>Select machine</option>
+          <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+        </select>
+        <input [(ngModel)]="ticketForm.title" placeholder="Title" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <select [(ngModel)]="ticketForm.issue_type" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option *ngFor="let t of issueTypes" [value]="t">{{ t }}</option>
+        </select>
+        <select [(ngModel)]="ticketForm.priority" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option *ngFor="let p of priorities" [value]="p">{{ p }}</option>
+        </select>
+        <select [(ngModel)]="ticketForm.assigned_to" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option [ngValue]="''">Unassigned</option>
+          <option *ngFor="let u of assignableUsers" [ngValue]="u.id">{{ u.username }}</option>
+        </select>
+        <textarea [(ngModel)]="ticketForm.description" placeholder="Description" class="col-span-2 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 h-20"></textarea>
+      </div>
+      <div class="flex gap-2 mt-3">
+        <button (click)="saveTicket()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Create</button>
+        <button (click)="showTicketForm=false" class="px-4 py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300">Cancel</button>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Machine</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Title</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Issue</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Priority</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Assigned To</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-600">Created</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          <ng-container *ngIf="tickets.length > 0; else noTickets">
+            <tr *ngFor="let t of tickets" class="hover:bg-gray-50 cursor-pointer" (click)="openTicket(t)">
+              <td class="px-4 py-3 font-medium">{{ t.machine_serial_no }}</td>
+              <td class="px-4 py-3">{{ t.title }}</td>
+              <td class="px-4 py-3 text-gray-500">{{ t.issue_type }}</td>
+              <td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-xs font-medium" [class]="priorityClass(t.priority)">{{ t.priority }}</span></td>
+              <td class="px-4 py-3 text-gray-500">{{ t.assigned_to_name || '--' }}</td>
+              <td class="px-4 py-3"><span class="px-2 py-1 rounded-md text-xs font-medium" [class]="ticketStatusClass(t.status)">{{ t.status }}</span></td>
+              <td class="px-4 py-3 text-gray-500">{{ t.created_at | date:'short' }}</td>
+            </tr>
+          </ng-container>
+          <ng-template #noTickets>
+            <tr><td colspan="7" class="px-4 py-12 text-center text-gray-400">No tickets</td></tr>
+          </ng-template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Ticket Detail Modal -->
+  <div *ngIf="selectedTicket" class="ui-overlay" (click)="closeTicketDetail()">
+    <div class="ui-dialog" role="dialog" aria-modal="true" aria-labelledby="ticketTitle"
+         (click)="$event.stopPropagation()">
+      <div class="ui-dialog-header">
+        <div>
+          <h2 id="ticketTitle" class="ui-dialog-title">{{ selectedTicket.title }}</h2>
+          <p class="ui-dialog-subtitle">{{ selectedTicket.machine_serial_no }} &middot; {{ selectedTicket.created_at | date:'short' }}</p>
+        </div>
+        <button type="button" class="ui-close" (click)="closeTicketDetail()" aria-label="Close ticket details">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="ui-dialog-body space-y-4">
+        <div class="flex gap-2">
+          <span class="px-2 py-1 rounded-md text-xs font-medium" [class]="ticketStatusClass(selectedTicket.status)">{{ selectedTicket.status }}</span>
+          <span class="px-2 py-1 rounded-md text-xs font-medium" [class]="priorityClass(selectedTicket.priority)">{{ selectedTicket.priority }}</span>
+          <span class="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">{{ selectedTicket.issue_type }}</span>
+        </div>
+
+        <p *ngIf="selectedTicket.description" class="text-sm text-gray-600">{{ selectedTicket.description }}</p>
+
+        <div *ngIf="selectedTicket.alarm_id" class="ui-alert ui-alert-error">
+          Raised from alarm: {{ selectedTicket.alarm_type }} ({{ selectedTicket.alarm_severity }}) &mdash; {{ selectedTicket.alarm_message }}
+        </div>
+
+        <!-- Assign -->
+        <div>
+          <label class="ui-label" for="ticketAssignee">Assigned to</label>
+          <div class="flex gap-2">
+            <select id="ticketAssignee" #assignSelect class="ui-input flex-1">
+              <option value="">{{ selectedTicket.assigned_to_name || 'Unassigned' }}</option>
+              <option *ngFor="let u of assignableUsers" [value]="u.id">{{ u.username }}</option>
+            </select>
+            <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm" (click)="assignTicketTo(+assignSelect.value)">Assign</button>
+          </div>
+        </div>
+
+        <!-- Status workflow -->
+        <div>
+          <label class="ui-label" for="ticketNote">Move to</label>
+          <div class="flex flex-wrap gap-2 mt-1">
+            <button *ngFor="let s of ticketStatuses" (click)="changeTicketStatus(s)"
+              [disabled]="s === selectedTicket.status"
+              class="px-3 py-1.5 rounded-lg text-xs font-medium border"
+              [class]="s === selectedTicket.status ? 'opacity-40 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50'">
+              {{ s }}
+            </button>
+          </div>
+          <input id="ticketNote" [(ngModel)]="statusNote" placeholder="Note (optional)" class="ui-input mt-2" />
+        </div>
+
+        <!-- History -->
+        <div>
+          <span class="ui-label">History</span>
+          <div class="mt-2 space-y-2 border-l-2 border-gray-100 pl-3">
+            <div *ngFor="let h of selectedTicket.history" class="text-xs">
+              <span class="font-medium text-gray-700">{{ h.from_status || 'Created' }} &rarr; {{ h.to_status }}</span>
+              <span class="text-gray-400"> &middot; {{ h.created_at | date:'short' }}</span>
+              <span *ngIf="h.changed_by_name" class="text-gray-400"> &middot; {{ h.changed_by_name }}</span>
+              <div *ngIf="h.note" class="text-gray-500">{{ h.note }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Schedules -->
   <div *ngIf="activeTab === 'schedules'">
     <div class="flex justify-end mb-4">
@@ -45,7 +192,10 @@
       <h3 class="font-semibold text-gray-800 mb-3">New Maintenance Schedule</h3>
       <div class="grid grid-cols-2 gap-3">
         <input [(ngModel)]="form.title" placeholder="Title" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <input [(ngModel)]="form.machine_id" placeholder="Machine ID" type="number" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <select [(ngModel)]="form.machine_id" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option [ngValue]="''" disabled>Select machine</option>
+          <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+        </select>
         <select [(ngModel)]="form.maintenance_type" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option *ngFor="let t of types" [value]="t">{{ t }}</option>
         </select>
@@ -105,7 +255,10 @@
       <h3 class="font-semibold text-gray-800 mb-3">Log Maintenance Work</h3>
       <div class="grid grid-cols-2 gap-3">
         <input [(ngModel)]="logForm.title" placeholder="Title" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <input [(ngModel)]="logForm.machine_id" placeholder="Machine ID" type="number" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <select [(ngModel)]="logForm.machine_id" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option [ngValue]="''" disabled>Select machine</option>
+          <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+        </select>
         <select [(ngModel)]="logForm.maintenance_type" class="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option *ngFor="let t of types" [value]="t">{{ t }}</option>
         </select>

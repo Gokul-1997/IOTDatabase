@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, FlatList, RefreshControl, Pressable } from 'react-native';
+import { View, Text, FlatList, RefreshControl, Pressable, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -85,7 +85,7 @@ function FleetStatsCard({
 }) {
   const theme = useTheme();
   return (
-    <Card style={{ flexDirection: 'row', marginTop: -theme.spacing.xl }}>
+    <Card style={{ flexDirection: 'row' }}>
       <FleetStatCell value={total} label="Total" color={theme.colors.accent} />
       <FleetStatCell value={running} label="Running" color={theme.colors.success} />
       <FleetStatCell value={idle} label="Idle" color={theme.colors.warning} />
@@ -104,12 +104,52 @@ function UtilizationBar({ value, color }: { value: number; color: string }) {
   );
 }
 
+// Mobile equivalent of FrontendIOT's .alarm-blink (styles.scss) — that's a
+// 1Hz blinking 10px border, tuned for a wall-mounted shop-floor screen.
+// On a handheld device the same intent (an alarmed machine must be
+// impossible to miss) reads better as a persistent red border with a slow
+// breathing pulse — reuses the exact Animated.loop pattern Skeleton.tsx
+// already established, rather than a jarring blink.
+function AlarmPulse() {
+  const theme = useTheme();
+  const opacity = useRef(new Animated.Value(0.35)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.35, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: theme.radius.lg,
+        borderWidth: 2,
+        borderColor: theme.colors.danger,
+        opacity,
+      }}
+    />
+  );
+}
+
 function MachineRow({ item, onPress }: { item: DashboardMachine; onPress: () => void }) {
   const theme = useTheme();
   const color = statusColor(theme, item.status);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}>
+    <View style={{ position: 'relative' }}>
     <Card style={{ gap: theme.spacing.sm }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: theme.type.bodyLarge, fontWeight: theme.weight.bold as any, color: theme.colors.textPrimary, flex: 1 }} numberOfLines={1}>
@@ -161,6 +201,8 @@ function MachineRow({ item, onPress }: { item: DashboardMachine; onPress: () => 
         </View>
       </View>
     </Card>
+    {item.alarm && <AlarmPulse />}
+    </View>
     </Pressable>
   );
 }
@@ -198,30 +240,50 @@ export function DashboardScreen() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const staleSweepRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Per-machine "last seen" clock: seeded fresh on every REST snapshot (the
-  // server just computed status as of that moment) and advanced by each
-  // socket packet's own received_at. Drives the local staleness sweep below,
-  // matching the web dashboard's OFFLINE-detection safety net.
+  // Per-machine "last seen" clock, in wall-clock seconds. Drives the local
+  // staleness sweep below, matching the web dashboard's OFFLINE-detection
+  // safety net.
+  //
+  // BUG THIS FIXES: this used to be seeded once at mount and refreshed only
+  // by socket events. If the socket never connects for any reason (blocked
+  // network, an account whose user.plant_id is null so DashboardScreen's
+  // join effect never fires, etc.), the clock is frozen forever and the
+  // *entire fleet* falls to OFFLINE exactly OFFLINE_THRESHOLD_SEC after the
+  // app opens — regardless of how fresh the REST data actually is. Symptom:
+  // "N seconds ago" showing a live REST poll while every machine shows
+  // OFFLINE with real, non-zero utilization/run-time numbers.
+  //
+  // Fix: refresh this clock from every REST poll too, whenever that poll's
+  // own status says the machine isn't OFFLINE. That status is itself
+  // computed server-side from real received_at freshness (see
+  // Backend/src/dashboard/dashboard.service.js), so "REST says RUNNING/IDLE"
+  // is a fully valid "seen recently" signal independent of socket health —
+  // this makes the sweep correct even with a socket that never connects.
   const lastSeenRef = useRef<Map<number, number>>(new Map());
+
+  function markFreshFromRest(machines: DashboardMachine[], nowSec: number) {
+    for (const m of machines) {
+      if (m.status !== 'OFFLINE') lastSeenRef.current.set(m.machine_id, nowSec);
+    }
+  }
 
   // Silent background refresh — never flips the full-screen loading state,
   // so a poll or socket patch never feels like a reload.
   //
-  // Matches FrontendIOT/dashboard.component.ts exactly: after the very
-  // first load, a REST poll only refreshes run_time/idle_time/utilization/
-  // operator/part — it must NEVER overwrite status/alarm again, or it fights
-  // with the socket's instant updates and the web/mobile counts drift apart
-  // (this was the actual bug — the two clients were computing counts the
-  // same way, but mobile kept re-syncing status from a 30s-stale snapshot).
+  // Matches FrontendIOT/dashboard.component.ts: after the very first load, a
+  // REST poll only refreshes run_time/idle_time/utilization/operator/part in
+  // the *displayed* machine object — it doesn't overwrite a socket-driven
+  // status with a 30s-stale one. (It still feeds the freshness clock above,
+  // which is a different thing from directly overwriting displayed status.)
   const fetchSilently = useCallback(async () => {
     try {
       const data = await dashboardApi.getDashboard();
       const nowSec = Math.floor(Date.now() / 1000);
+      markFreshFromRest(data.machines, nowSec);
 
       setDashboard((prev) => {
         if (!prev) {
           // Bootstrap: nothing to preserve yet, take everything as-is.
-          data.machines.forEach((m) => lastSeenRef.current.set(m.machine_id, nowSec));
           return data;
         }
 
@@ -229,9 +291,6 @@ export function DashboardScreen() {
         const machines = data.machines.map((incoming) => {
           const existing = existingById.get(incoming.machine_id);
           if (!existing) {
-            // A machine that's new since the last snapshot — nothing to
-            // preserve, so its freshness clock starts now.
-            lastSeenRef.current.set(incoming.machine_id, nowSec);
             return incoming;
           }
           // Keep the socket/sweep-owned fields; take everything else fresh.
@@ -355,13 +414,13 @@ export function DashboardScreen() {
       {/* Brand hero — same navy -> wine -> red gradient as FrontendIOT's .bg-top-bar
           (flattened to near-black in dark mode, matching the web app's dark theme). */}
       <LinearGradient
-        colors={theme.isDark ? ['#0f0f0f', '#0f0f0f'] : [palette.navy700, palette.wine600, palette.red500]}
+        colors={theme.isDark ? palette.brandGradientDark : [palette.navy700, palette.wine600, palette.red500]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={{
           paddingHorizontal: theme.spacing.lg,
           paddingTop: theme.spacing.md,
-          paddingBottom: noActiveShift ? theme.spacing.xl : theme.spacing.xxxl,
+          paddingBottom: theme.spacing.xl,
           borderBottomLeftRadius: theme.radius.xl,
           borderBottomRightRadius: theme.radius.xl,
         }}

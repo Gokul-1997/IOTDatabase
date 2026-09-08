@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, Image, Alert } from 'react-native';
+import { View, Text, Image, Alert, Pressable } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { TextField } from '../../components/TextField';
 import { Button } from '../../components/Button';
 import { StmMexaLogo } from '../../components/StmMexaLogo';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useAuthStore } from '../../store/authStore';
+import { RootStackParamList } from '../../navigation/types';
+
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -13,6 +18,7 @@ function isValidEmail(value: string) {
 
 export function LoginScreen() {
   const theme = useTheme();
+  const navigation = useNavigation<Nav>();
   const signIn = useAuthStore((s) => s.signIn);
 
   const [email, setEmail] = useState('');
@@ -77,7 +83,17 @@ export function LoginScreen() {
           onSubmitEditing={handleSubmit}
         />
 
-        <Button label="Sign In" onPress={handleSubmit} loading={submitting} style={{ marginTop: theme.spacing.sm }} />
+        <Pressable
+          onPress={() => navigation.navigate('ForgotPassword')}
+          hitSlop={8}
+          style={{ alignSelf: 'flex-end', marginTop: -theme.spacing.md, marginBottom: theme.spacing.lg }}
+        >
+          <Text style={{ color: theme.colors.accent, fontSize: theme.type.caption, fontWeight: theme.weight.semibold as any }}>
+            Forgot password?
+          </Text>
+        </Pressable>
+
+        <Button label="Sign In" onPress={handleSubmit} loading={submitting} />
       </View>
     </ScreenContainer>
   );

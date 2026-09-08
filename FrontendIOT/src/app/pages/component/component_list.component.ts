@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, OnDestroy } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Subject } from 'rxjs';
@@ -61,6 +61,24 @@ export class ComponentList implements OnInit, OnDestroy {
     private cdr:           ChangeDetectorRef,
     public auth:           AuthService
   ) {}
+
+  /**
+   * Show an error once the user has left the field, not while typing.
+   * Matches the shared dialog behaviour (see shared/dialog-form.base.ts);
+   * this is a page component rather than a dialog component, so it keeps
+   * its own copy instead of extending that base.
+   */
+  invalid(name: string): boolean {
+    const c = this.form?.get(name);
+    return !!c && c.invalid && (c.touched || c.dirty);
+  }
+
+  /** Escape closes whichever overlay is open, as it does everywhere else. */
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    if (this.deleteTarget) { this.cancelDelete(); return; }
+    if (this.showModal)    { this.closeModal(); }
+  }
 
   ngOnInit() {
     this.initForm();

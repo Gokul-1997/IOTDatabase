@@ -3,11 +3,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { DashboardScreen } from '../screens/dashboard/DashboardScreen';
+import { AlarmsScreen } from '../screens/alarms/AlarmsScreen';
 import { NotificationsScreen } from '../screens/notifications/NotificationsScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 
 export type MainTabParamList = {
   Dashboard: undefined;
+  Alarms: undefined;
   Notifications: undefined;
   Profile: undefined;
 };
@@ -16,6 +18,7 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const ICONS: Record<keyof MainTabParamList, keyof typeof Ionicons.glyphMap> = {
   Dashboard: 'grid-outline',
+  Alarms: 'warning-outline',
   Notifications: 'notifications-outline',
   Profile: 'person-outline',
 };
@@ -39,6 +42,7 @@ export function MainTabs() {
       })}
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Alarms" component={AlarmsScreen} />
       <Tab.Screen name="Notifications" component={NotificationsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

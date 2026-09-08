@@ -19,6 +19,13 @@ export const palette = {
   // text or small UI (a 3-stop gradient on body text or icons reads as noisy).
   brandGradient: ['#2B3990', '#843D67', '#EF4136'] as const,
 
+  // Dark-mode hero: same navy -> wine -> red identity, darkened and
+  // desaturated for an OLED-dark surface instead of flattened to flat
+  // black. Flat black was the original approach (see DashboardScreen git
+  // history) and reads as broken/generic — this keeps the brand gradient
+  // legible without the light-mode version's brightness.
+  brandGradientDark: ['#141C30', '#241A2C', '#1B1014'] as const,
+
   ink900: '#182430',
   ink700: '#333f4b',
   ink500: '#46586a',

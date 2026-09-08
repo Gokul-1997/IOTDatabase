@@ -34,11 +34,38 @@ export class ProgramService {
     return this.http.post<any>(`${this.api}/${programId}/transfer/${machineId}`, { overwrite });
   }
 
-  /** Send several programs to several machines in one action. */
-  transferBatch(programIds: number[], machineIds: number[], overwrite = false) {
+  /** Send several programs to several machines in one action.
+   *  Sending to a controller needs the machine supervisor's one-time code;
+   *  without it the API replies 403 APPROVAL_REQUIRED (or
+   *  NO_SUPERVISOR_ASSIGNED when nobody is assigned to the machine). */
+  transferBatch(
+    programIds: number[],
+    machineIds: number[],
+    overwrite = false,
+    auth?: { authorization_id: number; code: string }
+  ) {
     return this.http.post<any>(`${this.api}/transfer-batch`, {
-      program_ids: programIds, machine_ids: machineIds, overwrite
+      program_ids: programIds,
+      machine_ids: machineIds,
+      overwrite,
+      authorization_id: auth?.authorization_id,
+      authorization_code: auth?.code
     });
+  }
+
+  /** Ask the machine's supervisor for a one-time code. The response names
+   *  the supervisor and masks their address — it never carries the code. */
+  requestAuthorization(machineId: number, programIds: number[], supervisorId?: number) {
+    return this.http.post<any>(`${this.api}/authorization/request`, {
+      machine_id: machineId,
+      program_ids: programIds,
+      supervisor_id: supervisorId
+    });
+  }
+
+  /** Who may authorise transfers to this machine. */
+  getMachineSupervisors(machineId: number) {
+    return this.http.get<any>(`${this.api}/machine/${machineId}/supervisors`);
   }
 
   /** Files currently sitting on the controller. */

@@ -1,6 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { DialogFormBase } from '../../shared/dialog-form.base';
 import { PlantsService } from './plants.service';
 
 @Component({
@@ -9,7 +10,7 @@ import { PlantsService } from './plants.service';
   imports: [CommonModule, ReactiveFormsModule],
   templateUrl: './plant-form.component.html'
 })
-export class PlantFormComponent implements OnInit {
+export class PlantFormComponent extends DialogFormBase implements OnInit {
 
   @Input() data: any;
   @Output() close = new EventEmitter();
@@ -19,7 +20,9 @@ export class PlantFormComponent implements OnInit {
   saving   = false;
   errorMsg = '';
 
-  constructor(private service: PlantsService, private fb: FormBuilder) {}
+  constructor(private service: PlantsService, private fb: FormBuilder) { super(); }
+
+  dismiss() { this.close.emit(); }
 
   ngOnInit() {
     this.form = this.fb.group({

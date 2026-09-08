@@ -7,6 +7,7 @@ const {
   testMachineConnection
 } = require('./program.transfer');
 const { emitToUser } = require('../lib/realtime');
+const { assertAuthorized } = require('./authorization.service');
 
 /* ─────────────────────────────────────────────────────────────
    Helpers
@@ -31,6 +32,34 @@ function fileExistsError(fileName) {
   e.code = 'FILE_EXISTS';
   return e;
 }
+
+/**
+ * Supervisor authorisation travels in the body alongside `overwrite`,
+ * so the overwrite retry — which re-sends the whole batch — carries the
+ * same code and never re-prompts the supervisor.
+ */
+function authFromRequest(req) {
+  return {
+    authorization_id: req.body?.authorization_id,
+    code: req.body?.authorization_code
+  };
+}
+
+/**
+ * Error codes that deserve their own per-row status in a batch result
+ * rather than being flattened into FAILED. Each one has a distinct fix:
+ * overwrite it, enter a code, or ask an admin to assign a supervisor.
+ */
+const BATCH_ROW_STATUS = {
+  FILE_EXISTS:            'EXISTS',
+  APPROVAL_REQUIRED:      'APPROVAL_REQUIRED',
+  NO_SUPERVISOR_ASSIGNED: 'NO_SUPERVISOR',
+  INVALID_CODE:           'APPROVAL_REQUIRED',
+  CODE_EXPIRED:           'APPROVAL_REQUIRED',
+  CODE_LOCKED:            'APPROVAL_REQUIRED',
+  CODE_EXHAUSTED:         'APPROVAL_REQUIRED',
+  WRONG_MACHINE:          'APPROVAL_REQUIRED'
+};
 
 /**
  * Notify the user who ran the transfer. Best-effort: a failure to write
@@ -195,8 +224,21 @@ exports.getMachineStatus = async (req) => {
  * Shared by the single and batch endpoints so both log and notify
  * identically.
  */
-async function uploadOne({ program, machine, user, overwrite }) {
+async function uploadOne({ program, machine, user, overwrite, auth, verified }) {
   const companyId = user.company_id;
+
+  // Supervisor sign-off comes first — before the FTP probe below, so an
+  // unauthorised caller never opens a session against the controller.
+  // The guard lives here rather than in route middleware because both
+  // the single and batch endpoints funnel through this function, so
+  // there is no path to a machine that can skip it.
+  //
+  // `verified` is only ever supplied by transferBatch, which checks the
+  // code once per machine. Without it every program in a batch would be a
+  // separate verification, so one mistyped digit across five selected
+  // programs would burn five of the five attempts and lock the code
+  // outright. Absent it, this verifies for itself.
+  const authorization = verified || await assertAuthorized(machine, user, auth);
 
   if (!overwrite && await machineFileExists(machine, program.file_name)) {
     throw fileExistsError(program.file_name);
@@ -206,11 +248,13 @@ async function uploadOne({ program, machine, user, overwrite }) {
   const { rows: [{ id: transferId }] } = await pool.query(
     `INSERT INTO program_transfers
        (company_id, program_id, machine_id, program_name, file_name, machine_serial,
-        direction, file_size, status, transferred_by)
-     VALUES ($1,$2,$3,$4,$5,$6,'UPLOAD',$7,'PENDING',$8)
+        direction, file_size, status, transferred_by,
+        authorized_by, authorization_id, authorized_at)
+     VALUES ($1,$2,$3,$4,$5,$6,'UPLOAD',$7,'PENDING',$8,$9,$10,NOW())
      RETURNING id`,
     [companyId, program.id, machine.id, program.name, program.file_name,
-     machine.machine_serial_no, program.content?.length || null, user.id]
+     machine.machine_serial_no, program.content?.length || null, user.id,
+     authorization.supervisor_id, authorization.id]
   );
 
   try {
@@ -260,13 +304,14 @@ async function getProgram(programId, companyId) {
 exports.transferProgram = async (req) => {
   const { id: programId, machineId } = req.params;
   const overwrite = req.body?.overwrite === true || req.query?.overwrite === 'true';
+  const auth = authFromRequest(req);
 
   const [program, machine] = await Promise.all([
     getProgram(programId, req.user.company_id),
     getMachine(machineId, req.user.company_id)
   ]);
 
-  return uploadOne({ program, machine, user: req.user, overwrite });
+  return uploadOne({ program, machine, user: req.user, overwrite, auth });
 };
 
 /**
@@ -276,6 +321,7 @@ exports.transferProgram = async (req) => {
  */
 exports.transferBatch = async (req) => {
   const { program_ids = [], machine_ids = [], overwrite = false } = req.body || {};
+  const auth = authFromRequest(req);
 
   if (!Array.isArray(program_ids) || program_ids.length === 0) {
     throw new Error('Select at least one program to transfer');
@@ -292,19 +338,41 @@ exports.transferBatch = async (req) => {
 
   const results = [];
   for (const machine of machines) {
+    // Authorise once per machine, not once per program. Each machine still
+    // needs its own supervisor's code, so a batch spanning two machines
+    // fails cleanly on the one it has no authorisation for.
+    let verified;
+    try {
+      verified = await assertAuthorized(machine, req.user, auth);
+    } catch (err) {
+      for (const program of programs) {
+        results.push({
+          program_id: program.id, program_name: program.name,
+          machine_id: machine.id, machine_serial: machine.machine_serial_no,
+          status: BATCH_ROW_STATUS[err.code] || 'FAILED',
+          code: err.code, message: err.message
+        });
+      }
+      continue;
+    }
+
     for (const program of programs) {
       try {
-        const r = await uploadOne({ program, machine, user: req.user, overwrite });
+        const r = await uploadOne({ program, machine, user: req.user, overwrite, verified });
         results.push({
           program_id: program.id, program_name: program.name,
           machine_id: machine.id, machine_serial: machine.machine_serial_no,
           status: 'SUCCESS', transfer_id: r.transfer_id
         });
       } catch (err) {
+        // A batch can span machines with different supervisors, so an
+        // authorisation failure has to be reported per combination —
+        // collapsing it into FAILED would show "3 of 4 transfers failed"
+        // with no hint that the fix is a code, not a retry.
         results.push({
           program_id: program.id, program_name: program.name,
           machine_id: machine.id, machine_serial: machine.machine_serial_no,
-          status: err.code === 'FILE_EXISTS' ? 'EXISTS' : 'FAILED',
+          status: BATCH_ROW_STATUS[err.code] || 'FAILED',
           code: err.code, message: err.message
         });
       }
@@ -398,9 +466,12 @@ exports.getTransfers = async (req) => {
   const dataQuery = `
     SELECT t.id, t.program_name, t.file_name, t.machine_serial, t.status,
            t.direction, t.file_size, t.error_message, t.started_at, t.finished_at,
-           u.username AS transferred_by_name
+           t.authorized_at,
+           u.username AS transferred_by_name,
+           s.username AS authorized_by_name
     FROM program_transfers t
     LEFT JOIN users u ON u.id = t.transferred_by
+    LEFT JOIN users s ON s.id = t.authorized_by
     ${whereSQL}
     ORDER BY t.started_at DESC
     LIMIT $${values.length + 1} OFFSET $${values.length + 2}

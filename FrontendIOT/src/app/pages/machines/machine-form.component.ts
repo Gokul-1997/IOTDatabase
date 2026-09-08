@@ -4,7 +4,10 @@ import {
   Output,
   EventEmitter,
   OnInit,
-  ChangeDetectorRef
+  AfterViewInit,
+  ChangeDetectorRef,
+  ElementRef,
+  HostListener
 } from '@angular/core';
 
 import { CommonModule } from '@angular/common';
@@ -23,9 +26,10 @@ import { ProgramService } from '../../core/services/program.service';
   standalone: true,
   selector: 'app-machine-form',
   imports: [CommonModule, ReactiveFormsModule],
-  templateUrl: './machine-form.component.html'
+  templateUrl: './machine-form.component.html',
+  styleUrls: ['./machine-form.component.scss']
 })
-export class MachineFormComponent implements OnInit {
+export class MachineFormComponent implements OnInit, AfterViewInit {
 
   @Input() data: any;
   @Output() saved = new EventEmitter<void>();
@@ -37,12 +41,25 @@ export class MachineFormComponent implements OnInit {
   lines: any[] = [];
   form!: FormGroup;
 
+  /** Result of the last FTP test, shown inline beside the button. */
+  connectionResult: { ok: boolean; message: string } | null = null;
+
+  /** Rendered as one row so the five axes read as a single group. */
+  readonly axes = [
+    { key: 'x_axis',      label: 'X axis',   placeholder: '1050' },
+    { key: 'y_axis',      label: 'Y axis',   placeholder: '530'  },
+    { key: 'z_axis',      label: 'Z axis',   placeholder: '510'  },
+    { key: 'fourth_axis', label: '4th axis', placeholder: '360'  },
+    { key: 'fifth_axis',  label: '5th axis', placeholder: '120'  }
+  ];
+
   constructor(
     private fb: FormBuilder,
     private service: MachinesService,
     private toast: ToastService,
     private programService: ProgramService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private host: ElementRef<HTMLElement>
   ) {}
 
   ngOnInit() {
@@ -71,6 +88,60 @@ export class MachineFormComponent implements OnInit {
       ftp_dir: ['']
     });
     this.loadLines();
+  }
+
+  ngAfterViewInit() {
+    // Send focus into the dialog so a keyboard user is not left on the page
+    // behind it. The line select is the first thing to fill in.
+    setTimeout(() => this.host.nativeElement.querySelector<HTMLElement>('#mfLine')?.focus());
+  }
+
+  ////////////////////////////////////////////
+  // DIALOG BEHAVIOUR
+  ////////////////////////////////////////////
+
+  /** Escape closes, as every dialog is expected to. */
+  @HostListener('document:keydown.escape')
+  onEscape() { this.close.emit(); }
+
+  /** Click the backdrop to dismiss; clicks inside the card are stopped in the template. */
+  onOverlayClick(event: MouseEvent) {
+    if ((event.target as HTMLElement).classList.contains('mf-overlay')) this.close.emit();
+  }
+
+  /**
+   * Keep Tab inside the dialog. Without this, tabbing past the last button
+   * walks into the page behind, which is still rendered and clickable.
+   */
+  @HostListener('document:keydown.tab', ['$event'])
+  @HostListener('document:keydown.shift.tab', ['$event'])
+  onTab(rawEvent: Event) {
+    const event = rawEvent as KeyboardEvent;
+    const focusable = Array.from(
+      this.host.nativeElement.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter(el => el.offsetParent !== null);
+
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last  = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement;
+
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  /** Show an error only once the user has left the field, not while typing. */
+  invalid(name: string): boolean {
+    const c = this.form?.get(name);
+    return !!c && c.invalid && (c.touched || c.dirty);
   }
 
   ////////////////////////////////////////////
@@ -113,10 +184,12 @@ export class MachineFormComponent implements OnInit {
         this.form.get('image_url')?.markAsDirty();
 
         this.uploading = false;
+        this.cdr.detectChanges();
       },
       error: () => {
         this.toast.error('Image upload failed. Please try again.');
         this.uploading = false;
+        this.cdr.detectChanges();
       }
     });
   }
@@ -133,6 +206,7 @@ export class MachineFormComponent implements OnInit {
     }
 
     this.testingConnection = true;
+    this.connectionResult = null;
     this.programService.testConnection({
       machine_id: this.data?.id,
       ip_address: v.ip_address,
@@ -142,12 +216,17 @@ export class MachineFormComponent implements OnInit {
     }).subscribe({
       next: () => {
         this.testingConnection = false;
-        this.toast.success('FTP connection successful');
+        // Kept on screen rather than only toasted — a toast is gone before
+        // you can compare it against the IP you just typed.
+        this.connectionResult = { ok: true, message: 'Controller reachable' };
         this.cdr.detectChanges();
       },
       error: err => {
         this.testingConnection = false;
-        this.toast.error(err.error?.message || 'FTP connection failed');
+        this.connectionResult = {
+          ok: false,
+          message: err.error?.message || 'Could not reach the controller'
+        };
         this.cdr.detectChanges();
       }
     });
@@ -161,6 +240,17 @@ export class MachineFormComponent implements OnInit {
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      this.cdr.detectChanges();
+
+      // Move focus to the first problem rather than leaving the user to hunt
+      // for red borders in a form four sections long.
+      const firstInvalid = Object.keys(this.form.controls).find(k => this.form.get(k)?.invalid);
+      const map: Record<string, string> = { line_id: '#mfLine', machine_serial_no: '#mfSerial' };
+      const el = firstInvalid && map[firstInvalid]
+        ? this.host.nativeElement.querySelector<HTMLElement>(map[firstInvalid])
+        : null;
+      el?.focus();
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
 

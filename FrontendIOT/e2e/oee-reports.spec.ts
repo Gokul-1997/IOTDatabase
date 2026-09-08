@@ -48,7 +48,9 @@ test.describe('OEE Reports page', () => {
     }));
 
     await page.goto('/oee-reports');
-    // Either an empty-state message or 0 rows — at minimum no machine rows visible
-    await expect(page.getByText('VMC-1-F')).toHaveCount(0);
+    // Scope to the results table: the machine name also appears in the
+    // filter dropdown, so a page-wide check would match that instead.
+    await expect(page.locator('table.data-table tbody').getByText('VMC-1-F')).toHaveCount(0);
+    await expect(page.getByText(/No records found/i)).toBeVisible();
   });
 });

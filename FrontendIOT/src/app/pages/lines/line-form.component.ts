@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 
+import { DialogFormBase } from '../../shared/dialog-form.base';
 import { LinesService } from './lines.service';
 import { ToastService } from '../../core/services/toast.service';
 
@@ -12,7 +13,7 @@ import { ToastService } from '../../core/services/toast.service';
   templateUrl: './line-form.component.html',
   imports: [CommonModule, ReactiveFormsModule, MatIconModule]
 })
-export class LineFormComponent implements OnInit {
+export class LineFormComponent extends DialogFormBase implements OnInit {
 
   @Input() data: any;
   @Output() saved = new EventEmitter<void>();
@@ -25,7 +26,9 @@ export class LineFormComponent implements OnInit {
     private fb: FormBuilder,
     private service: LinesService,
     private toast: ToastService
-  ) {}
+  ) { super(); }
+
+  dismiss() { this.close.emit(); }
 
   ngOnInit() {
     this.form = this.fb.group({
@@ -43,7 +46,10 @@ export class LineFormComponent implements OnInit {
 
   submit() {
     this.form.markAllAsTouched();
-    if (this.form.invalid) return;
+    if (this.form.invalid) {
+      this.focusFirstInvalid({ name: '#lineName' });
+      return;
+    }
 
     this.saving = true;
     const payload = this.form.value;
@@ -64,6 +70,7 @@ export class LineFormComponent implements OnInit {
         next: () => { this.saving = false; this.saved.emit(); },
         error: (err: any) => {
           this.saving = false;
+          this.touch();
           this.toast.error(err?.error?.message || 'Update failed. Try again.');
         }
       });
@@ -72,6 +79,7 @@ export class LineFormComponent implements OnInit {
         next: () => { this.saving = false; this.saved.emit(); },
         error: (err: any) => {
           this.saving = false;
+          this.touch();
           this.toast.error(err?.error?.message || 'Create failed. Try again.');
         }
       });

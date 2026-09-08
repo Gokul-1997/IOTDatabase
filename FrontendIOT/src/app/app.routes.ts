@@ -20,6 +20,7 @@ export const routes: Routes = [
     children: [
 
       { path: 'dashboard', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent) },
+      { path: 'factory', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/factory/factory.component').then(m => m.FactoryComponent) },
       { path: 'dashboard/live/:id', canActivate: [permissionGuard('page:dashboard:live')], loadComponent: () => import('./pages/dashboard/live/live.component').then(m => m.LiveComponent) },
 
       { path: 'component', canActivate: [permissionGuard('page:component')], loadComponent: () => import('./pages/component/component_list.component').then(m => m.ComponentList) },

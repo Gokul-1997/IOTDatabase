@@ -117,65 +117,84 @@
 </div>
 
 <!-- ──────────────── CREATE MODAL ──────────────── -->
-<div *ngIf="showCreateModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
-      <h2 class="text-xl font-bold text-gray-800 dark:text-white">Create New User</h2>
-      <button (click)="closeCreateModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+<div *ngIf="showCreateModal" class="ui-overlay">
+  <div class="ui-dialog">
+    <div class="ui-dialog-header">
+      <div>
+        <h2 class="ui-dialog-title">Create New User</h2>
+        <p class="ui-dialog-subtitle">Credentials, role, and the machines they authorise transfers to.</p>
+      </div>
+      <button (click)="closeCreateModal()" class="ui-close" aria-label="Close">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="ui-dialog-body space-y-4">
 
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Username *</label>
+        <label class="ui-label">Username<span class="ui-req" aria-hidden="true">*</span></label>
         <input [(ngModel)]="createForm.username" type="text"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+          class="ui-input"
           placeholder="e.g., john_doe">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Email *</label>
+        <label class="ui-label">Email<span class="ui-req" aria-hidden="true">*</span></label>
         <input [(ngModel)]="createForm.email" type="email"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+          class="ui-input"
           placeholder="user@company.com">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Password *</label>
+        <label class="ui-label">Password<span class="ui-req" aria-hidden="true">*</span></label>
         <input [(ngModel)]="createForm.password" type="password"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+          class="ui-input"
           placeholder="Minimum 8 characters">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Assign Roles</label>
-        <div *ngIf="roles.length === 0" class="text-sm text-gray-400 italic py-2">
-          No roles available. Create roles first in the Roles & Permissions tab.
-        </div>
-        <div class="space-y-2 max-h-40 overflow-y-auto">
-          <label *ngFor="let role of roles"
-            class="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
-            [class.bg-blue-50]="isRoleSelectedForCreate(role.id)"
-            [class.dark:bg-blue-900]="isRoleSelectedForCreate(role.id)">
+        <label class="ui-label" for="createFormRole">
+          Role<span class="ui-req" aria-hidden="true">*</span>
+        </label>
+        <select id="createFormRole" class="ui-input"
+                [ngModel]="selectedRoleId('Create')"
+                (ngModelChange)="setRole('Create', $event)"
+                aria-describedby="createFormRoleHint">
+          <option [ngValue]="null">Select a role</option>
+          <option *ngFor="let role of roles" [ngValue]="role.id">{{ role.role_name }}</option>
+        </select>
+        <p id="createFormRoleHint" class="ui-hint">
+          {{ roleSummary('Create') }}
+        </p>
+      </div>
+
+      <!--
+        Machines are only relevant to a role that can send programs to a
+        controller — that person's one-time code is what authorises the
+        transfer. Showing this list for, say, a Viewer only invites the
+        question "why does a viewer need machines?".
+      -->
+      <div *ngIf="roleNeedsMachines('Create')">
+        <label class="ui-label">Machines this user supervises</label>
+        <p class="ui-hint !mt-0 mb-2">
+          Sending a program to one of these machines will need this user's authorisation code.
+        </p>
+        <div *ngIf="machines.length === 0" class="ui-hint">No machines available.</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto">
+          <label *ngFor="let m of machines" class="ui-toggle">
             <input type="checkbox"
-              [checked]="isRoleSelectedForCreate(role.id)"
-              (change)="toggleRoleForCreate(role.id)"
-              class="w-4 h-4 accent-blue-600">
-            <div>
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ role.role_name }}</span>
-              <span *ngIf="role.company_name" class="ml-1 text-xs text-gray-400">({{ role.company_name }})</span>
-            </div>
+              [checked]="isMachineSelectedForCreate(m.id)"
+              (change)="toggleMachineForCreate(m.id)" />
+            <span><span class="ui-toggle-label">{{ m.machine_serial_no }}</span></span>
           </label>
         </div>
       </div>
     </div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+    <div class="ui-dialog-footer">
       <button (click)="closeCreateModal()"
-        class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+        class="ui-btn ui-btn-ghost">
         Cancel
       </button>
       <button (click)="createUser()" [disabled]="loading"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+        class="ui-btn ui-btn-primary">
         {{ loading ? 'Creating...' : 'Create User' }}
       </button>
     </div>
@@ -183,34 +202,37 @@
 </div>
 
 <!-- ──────────────── EDIT MODAL ──────────────── -->
-<div *ngIf="showEditModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md">
-    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
-      <h2 class="text-xl font-bold text-gray-800 dark:text-white">Edit User</h2>
-      <button (click)="closeEditModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+<div *ngIf="showEditModal" class="ui-overlay">
+  <div class="ui-dialog">
+    <div class="ui-dialog-header">
+      <div>
+        <h2 class="ui-dialog-title">Edit User</h2>
+        <p class="ui-dialog-subtitle">Change credentials, roles or supervised machines.</p>
+      </div>
+      <button (click)="closeEditModal()" class="ui-close" aria-label="Close">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
     </div>
-    <div class="p-6 space-y-4">
+    <div class="ui-dialog-body space-y-4">
 
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Username</label>
+        <label class="ui-label">Username</label>
         <input [(ngModel)]="editForm.username" type="text"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+          class="ui-input">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Email</label>
+        <label class="ui-label">Email</label>
         <input [(ngModel)]="editForm.email" type="email"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none">
+          class="ui-input">
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">
+        <label class="ui-label">
           New Password <span class="text-gray-400 font-normal">(leave blank to keep current)</span>
         </label>
         <input [(ngModel)]="editForm.password" type="password"
-          class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+          class="ui-input"
           placeholder="••••••••">
       </div>
       <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
@@ -220,31 +242,50 @@
         </label>
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Roles</label>
-        <div class="space-y-2 max-h-40 overflow-y-auto">
-          <label *ngFor="let role of roles"
-            class="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
-            [class.bg-blue-50]="isRoleSelectedForEdit(role.id)"
-            [class.dark:bg-blue-900]="isRoleSelectedForEdit(role.id)">
+        <label class="ui-label" for="editFormRole">
+          Role<span class="ui-req" aria-hidden="true">*</span>
+        </label>
+        <select id="editFormRole" class="ui-input"
+                [ngModel]="selectedRoleId('Edit')"
+                (ngModelChange)="setRole('Edit', $event)"
+                aria-describedby="editFormRoleHint">
+          <option [ngValue]="null">Select a role</option>
+          <option *ngFor="let role of roles" [ngValue]="role.id">{{ role.role_name }}</option>
+        </select>
+        <p id="editFormRoleHint" class="ui-hint">
+          {{ roleSummary('Edit') }}
+        </p>
+      </div>
+
+      <!--
+        Machines are only relevant to a role that can send programs to a
+        controller — that person's one-time code is what authorises the
+        transfer. Showing this list for, say, a Viewer only invites the
+        question "why does a viewer need machines?".
+      -->
+      <div *ngIf="roleNeedsMachines('Edit')">
+        <label class="ui-label">Machines this user supervises</label>
+        <p class="ui-hint !mt-0 mb-2">
+          Sending a program to one of these machines will need this user's authorisation code.
+        </p>
+        <div *ngIf="machines.length === 0" class="ui-hint">No machines available.</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto">
+          <label *ngFor="let m of machines" class="ui-toggle">
             <input type="checkbox"
-              [checked]="isRoleSelectedForEdit(role.id)"
-              (change)="toggleRoleForEdit(role.id)"
-              class="w-4 h-4 accent-blue-600">
-            <div>
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ role.role_name }}</span>
-              <span *ngIf="role.company_name" class="ml-1 text-xs text-gray-400">({{ role.company_name }})</span>
-            </div>
+              [checked]="isMachineSelectedForEdit(m.id)"
+              (change)="toggleMachineForEdit(m.id)" />
+            <span><span class="ui-toggle-label">{{ m.machine_serial_no }}</span></span>
           </label>
         </div>
       </div>
     </div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+    <div class="ui-dialog-footer">
       <button (click)="closeEditModal()"
-        class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+        class="ui-btn ui-btn-ghost">
         Cancel
       </button>
       <button (click)="updateUser()" [disabled]="loading"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+        class="ui-btn ui-btn-primary">
         {{ loading ? 'Saving...' : 'Save Changes' }}
       </button>
     </div>

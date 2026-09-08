@@ -34,7 +34,7 @@ exports.deleteProgram = async (req, res) => {
     await service.deleteProgram(req);
     res.json({ status: 'success', message: 'Program deleted successfully' });
   } catch (e) {
-    res.status(400).json({ status: 'error', message: e.message });
+    res.status(e.status || 400).json({ status: 'error', code: e.code, message: e.message });
   }
 };
 
@@ -75,7 +75,7 @@ exports.fetchFromMachine = async (req, res) => {
     const data = await service.fetchFromMachine(req);
     res.json({ status: 'success', data, message: 'Program retrieved from machine' });
   } catch (e) {
-    res.status(e.status || 400).json({ status: 'error', message: e.message });
+    res.status(e.status || 400).json({ status: 'error', code: e.code, message: e.message });
   }
 };
 

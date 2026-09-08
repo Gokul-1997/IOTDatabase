@@ -241,31 +241,40 @@
 
 
   <!-- ── DELETE CONFIRM ──────────────────────────────────────────────────── -->
-  <div *ngIf="deleteTarget" class="modal-backdrop">
-    <div class="delete-modal mat-elevation-z8">
-
-      <div class="delete-icon-wrap">
-        <mat-icon>delete_forever</mat-icon>
+  <div *ngIf="deleteTarget" class="ui-overlay">
+    <div class="ui-dialog ui-dialog-sm" role="alertdialog" aria-modal="true"
+         aria-labelledby="delTitle" aria-describedby="delBody">
+      <div class="ui-dialog-header">
+        <div class="flex items-start gap-3">
+          <span class="ui-danger-icon" aria-hidden="true">
+            <mat-icon>delete_forever</mat-icon>
+          </span>
+          <div>
+            <h2 id="delTitle" class="ui-dialog-title">Delete Machine</h2>
+            <p id="delBody" class="ui-dialog-subtitle">
+              Delete <strong>{{ deleteTarget.machine_serial_no }}</strong>? This cannot be undone.
+            </p>
+          </div>
+        </div>
       </div>
 
-      <h3>Delete Machine</h3>
-      <p>
-        Are you sure you want to delete
-        <strong>{{ deleteTarget.machine_serial_no }}</strong>?<br>
-        This action cannot be undone.
-      </p>
+      <div class="ui-dialog-body">
+        <p class="ui-alert ui-alert-warn">
+          Historical records that reference it are kept, but it will no longer
+          be available to select.
+        </p>
+        <div *ngIf="deleteError" class="ui-alert ui-alert-error mt-3" role="alert">{{ deleteError }}</div>
+      </div>
 
-      <div *ngIf="deleteError" class="error-banner">{{ deleteError }}</div>
-
-      <div class="modal-actions">
-        <button class="btn-cancel" (click)="cancelDelete()" [disabled]="deleting">Cancel</button>
-        <button class="btn-danger" (click)="doDelete()" [disabled]="deleting">
-          <mat-spinner *ngIf="deleting" diameter="18"></mat-spinner>
-          <mat-icon *ngIf="!deleting">delete</mat-icon>
+      <div class="ui-dialog-footer">
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="cancelDelete()" [disabled]="deleting">
+          Cancel
+        </button>
+        <button type="button" class="ui-btn ui-btn-danger" (click)="doDelete()" [disabled]="deleting">
+          <span *ngIf="deleting" class="ui-spinner" aria-hidden="true"></span>
           {{ deleting ? 'Deleting…' : 'Delete' }}
         </button>
       </div>
-
     </div>
   </div>
 

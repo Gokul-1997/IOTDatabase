@@ -1,17 +1,28 @@
-import React from 'react';
+import React, { useId } from 'react';
 import Svg, { Path, Defs, LinearGradient, Stop, ClipPath, Rect, G } from 'react-native-svg';
 
 // Direct port of FrontendIOT/public/images/logo/STM_Mexa_logo.svg — same
 // paths, same gradient stops, so the mobile wordmark matches the web app
 // exactly rather than approximating it.
+//
+// Gradient/clip ids are instance-scoped via useId(): on web, react-native-svg
+// renders real inline <svg> elements, and browsers resolve url(#id) against
+// the WHOLE document, not scoped to the containing <svg> — so two mounted
+// instances sharing a literal id (e.g. Login and ForgotPassword both mounted
+// at once in a native-stack navigator) collide and one silently loses its
+// fill. A fixed id only ever breaks once a second instance mounts alongside
+// the first, so this only reproduces with >1 screen using the logo.
 export function StmMexaLogo({ width = 123, dark = false }: { width?: number; dark?: boolean }) {
   const height = (width / 246) * 88;
   const stmColor = dark ? '#E8ECF5' : '#102B4E';
+  const uid = useId();
+  const gradientId = `mexaGrad-${uid}`;
+  const clipId = `mexaClip-${uid}`;
 
   return (
     <Svg width={width} height={height} viewBox="0 0 246 88" fill="none">
       <Defs>
-        <LinearGradient id="mexaGrad" x1="40.2311" y1="103.504" x2="222.042" y2="28.278" gradientUnits="userSpaceOnUse">
+        <LinearGradient id={gradientId} x1="40.2311" y1="103.504" x2="222.042" y2="28.278" gradientUnits="userSpaceOnUse">
           <Stop offset="0.05" stopColor="#2B3990" />
           <Stop offset="0.14" stopColor="#4A3A82" />
           <Stop offset="0.31" stopColor="#843D67" />
@@ -20,11 +31,11 @@ export function StmMexaLogo({ width = 123, dark = false }: { width?: number; dar
           <Stop offset="0.73" stopColor="#E84139" />
           <Stop offset="0.81" stopColor="#EF4136" />
         </LinearGradient>
-        <ClipPath id="clip">
+        <ClipPath id={clipId}>
           <Rect width={246} height={88} fill="#fff" />
         </ClipPath>
       </Defs>
-      <G clipPath="url(#clip)">
+      <G clipPath={`url(#${clipId})`}>
         {/* MEXA — gradient wordmark */}
         <Path
           d="M62.5823 38.2482H85.7698V87.9829H72.367V51.0528H71.0244L60.1703 79.0129C57.6899 85.4037 55.8183 87.9601 49.1795 87.9601H33.5012V51.0528H32.1644C29.4167 51.0528 27.9433 52.2568 26.7999 55.3153L14.7396 87.9943H0L14.7396 51.7604C18.7218 42.0257 23.9213 38.2596 33.5126 38.2596H46.9154V75.2069H48.2522L62.5823 38.2482ZM246 55.7661V88H231.778V76.7304H207.646V88.0057H175.106L163.991 71.5949L163.956 70.7561L163.922 71.5949L152.806 87.9715H133.982H105.299C93.2391 87.9715 88.5573 82.1969 88.5573 67.1498V59.087C88.5573 44.0285 93.2391 38.2482 105.299 38.2482H136.115H154.069L163.939 50.6362L173.815 38.2482H192.201L175.095 62.174L193.436 87.3324V55.7661C193.436 43.1612 199.545 38.2653 215.44 38.2653H223.973C239.896 38.2653 246 43.1612 246 55.7661ZM152.801 62.1855L136.115 38.8645V51.7033H107.313C103.092 51.7033 101.135 53.1355 100.703 56.7304H136.115V69.5007H100.703C101.129 73.107 103.086 74.545 107.313 74.545H136.115V85.0614L152.801 62.1855ZM231.789 57.9002C231.789 52.8502 229.804 50.893 224.69 50.893H214.746C209.626 50.893 207.646 52.8502 207.646 57.9002V63.9829H231.789V57.9002Z"

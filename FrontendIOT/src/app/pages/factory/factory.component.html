@@ -1,0 +1,257 @@
+<div class="page-wrapper">
+
+  <!-- HEADER + FILTERS -->
+  <div class="bg-top-bar flex-wrap">
+    <div class="toolbar-left">
+      <h2 class="text-xl font-ubuntu font-bold text-white">Factory Overall Dashboard</h2>
+    </div>
+
+    <div class="toolbar-right">
+      <div class="flex flex-wrap items-end gap-4 w-full justify-center md:justify-end">
+
+        <!-- Machine -->
+        <div class="flex flex-col md:flex-row gap-2 items-center">
+          <label class="text-sm font-medium text-white">Machine</label>
+          <select [(ngModel)]="selectedMachine" class="filter-select">
+            <option [ngValue]="null">All Machines</option>
+            <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+          </select>
+        </div>
+
+        <!-- Shift -->
+        <div class="flex flex-col md:flex-row gap-2 items-center">
+          <label class="text-sm font-medium text-white">Shift</label>
+          <select [(ngModel)]="selectedShift" class="filter-select">
+            <option [ngValue]="null">All Shifts</option>
+            <option *ngFor="let s of shifts" [ngValue]="s.id">{{ s.shift_name || s.shift_code }}</option>
+          </select>
+        </div>
+
+        <!-- Date -->
+        <div class="flex flex-col md:flex-row gap-2 items-center">
+          <label class="text-sm font-medium text-white">Date</label>
+          <input type="date" [(ngModel)]="selectedDate" [max]="today" class="filter-date" />
+        </div>
+
+        <button (click)="submit()" class="btn-primary">
+          Submit
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+        </button>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- LOADING -->
+  <div *ngIf="loading && !data" class="flex justify-center py-16">
+    <div class="animate-spin w-9 h-9 border-4 border-white/40 border-t-transparent rounded-full"></div>
+  </div>
+
+  <!-- ERROR / EMPTY -->
+  <div *ngIf="errorMsg && !data"
+       class="bg-white dark:bg-[#111] rounded-xl shadow p-8 text-center text-gray-600 dark:text-gray-300">
+    {{ errorMsg }}
+  </div>
+
+  <ng-container *ngIf="data">
+
+    <!-- ── MACHINE STATE ─────────────────────────────────── -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-4">
+        <div class="text-xs uppercase tracking-wide text-gray-500">Total Machines</div>
+        <div class="text-3xl font-bold text-gray-800 dark:text-white mt-1">{{ data.machines.total }}</div>
+      </div>
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-4 border-l-4 border-emerald-500">
+        <div class="text-xs uppercase tracking-wide text-gray-500">Running</div>
+        <div class="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{{ data.machines.running }}</div>
+      </div>
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-4 border-l-4 border-amber-500">
+        <div class="text-xs uppercase tracking-wide text-gray-500">Idle</div>
+        <div class="text-3xl font-bold text-amber-600 dark:text-amber-400 mt-1">{{ data.machines.idle }}</div>
+      </div>
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-4 border-l-4 border-red-500">
+        <div class="text-xs uppercase tracking-wide text-gray-500">Breakdown</div>
+        <div class="text-3xl font-bold text-red-600 dark:text-red-400 mt-1">{{ data.machines.breakdown }}</div>
+        <div *ngIf="data.machines.offline" class="text-xs text-gray-400 mt-1">
+          {{ data.machines.offline }} offline
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PRODUCTION · OEE · ENERGY ─────────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
+
+      <!-- Production -->
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-800 dark:text-white mb-3">Production</h3>
+        <div class="flex items-end gap-3">
+          <div class="text-4xl font-bold text-gray-800 dark:text-white">{{ data.production.produced }}</div>
+          <div class="text-sm text-gray-500 pb-1">
+            of {{ data.production.planned || '—' }} planned
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="flex justify-between text-xs text-gray-500 mb-1">
+            <span>Against plan</span>
+            <span>{{ data.production.percent !== null ? data.production.percent + '%' : 'No plan set' }}</span>
+          </div>
+          <div class="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div class="h-full bg-[#2B3990] rounded-full"
+                 [style.width.%]="data.production.percent ? (data.production.percent > 100 ? 100 : data.production.percent) : 0"></div>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-4 text-center">
+          <div>
+            <div class="text-xs text-gray-500">Run</div>
+            <div class="font-semibold text-emerald-600 dark:text-emerald-400">{{ hm(data.time.run_seconds) }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Idle</div>
+            <div class="font-semibold text-amber-600 dark:text-amber-400">{{ hm(data.time.idle_seconds) }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Down</div>
+            <div class="font-semibold text-red-600 dark:text-red-400">{{ hm(data.time.down_seconds) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- OEE -->
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+        <div class="flex items-baseline justify-between mb-3">
+          <h3 class="font-semibold text-gray-800 dark:text-white">Overall OEE</h3>
+          <span class="text-xs text-gray-500">Target {{ data.oee.target }}%</span>
+        </div>
+        <div class="text-5xl font-bold" [ngClass]="oeeColor(data.oee.oee)">{{ data.oee.oee }}%</div>
+        <div class="mt-4 space-y-3">
+          <div *ngFor="let row of [
+                 { label: 'Availability', value: data.oee.availability },
+                 { label: 'Performance',  value: data.oee.performance },
+                 { label: 'Quality',      value: data.oee.quality }]">
+            <div class="flex justify-between text-xs text-gray-500 mb-1">
+              <span>{{ row.label }}</span><span>{{ row.value }}%</span>
+            </div>
+            <div class="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div class="h-full bg-[#9B3F70] rounded-full"
+                   [style.width.%]="row.value > 100 ? 100 : row.value"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Energy -->
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-800 dark:text-white mb-3">Energy</h3>
+        <div class="text-4xl font-bold text-gray-800 dark:text-white">
+          {{ data.energy.kwh }} <span class="text-base font-medium text-gray-500">kWh</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">Month to date: {{ data.energy.month_kwh }} kWh</div>
+        <div class="grid grid-cols-2 gap-3 mt-4">
+          <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-lg p-3">
+            <div class="text-xs text-gray-500">Cost today</div>
+            <div class="font-semibold text-gray-800 dark:text-white text-sm mt-0.5">{{ money(data.energy.cost_day) }}</div>
+          </div>
+          <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-lg p-3">
+            <div class="text-xs text-gray-500">Cost this month</div>
+            <div class="font-semibold text-gray-800 dark:text-white text-sm mt-0.5">{{ money(data.energy.cost_month) }}</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── ALARMS + DOWNTIME SPLIT ───────────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+        <div class="flex items-baseline justify-between mb-3">
+          <h3 class="font-semibold text-gray-800 dark:text-white">Alarm Summary</h3>
+          <span class="text-xs text-gray-500">{{ data.alarms.open }} open</span>
+        </div>
+        <div class="grid grid-cols-4 gap-3 text-center">
+          <div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-white">{{ data.alarms.total }}</div>
+            <div class="text-xs text-gray-500 mt-0.5">Total</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold text-red-600 dark:text-red-400">{{ data.alarms.critical }}</div>
+            <div class="text-xs text-gray-500 mt-0.5">Critical</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold text-amber-600 dark:text-amber-400">{{ data.alarms.non_critical }}</div>
+            <div class="text-xs text-gray-500 mt-0.5">Non-Critical</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold text-sky-600 dark:text-sky-400">{{ data.alarms.information }}</div>
+            <div class="text-xs text-gray-500 mt-0.5">Information</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-800 dark:text-white mb-3">Downtime</h3>
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div>
+            <div class="text-xl font-bold text-gray-800 dark:text-white">{{ hm(data.downtime.total_seconds) }}</div>
+            <div class="text-xs text-gray-500 mt-0.5">Total</div>
+          </div>
+          <div>
+            <div class="text-xl font-bold text-sky-600 dark:text-sky-400">{{ hm(data.downtime.planned_seconds) }}</div>
+            <div class="text-xs text-gray-500 mt-0.5">Planned</div>
+          </div>
+          <div>
+            <div class="text-xl font-bold text-red-600 dark:text-red-400">{{ hm(data.downtime.unplanned_seconds) }}</div>
+            <div class="text-xs text-gray-500 mt-0.5">Unplanned</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── CHARTS ────────────────────────────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-800 dark:text-white mb-2">Shift-wise Production</h3>
+        <apx-chart *ngIf="shiftCategories.length"
+                   [series]="shiftSeries" [chart]="shiftChart.chart"
+                   [plotOptions]="shiftChart.plotOptions" [dataLabels]="shiftChart.dataLabels"
+                   [colors]="shiftChart.colors" [xaxis]="shiftChart.xaxis"
+                   [yaxis]="shiftChart.yaxis" [grid]="shiftChart.grid"
+                   [tooltip]="shiftChart.tooltip"></apx-chart>
+        <p *ngIf="!shiftCategories.length" class="text-sm text-gray-400 py-10 text-center">No shift data.</p>
+      </div>
+
+      <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+        <h3 class="font-semibold text-gray-800 dark:text-white mb-2">Downtime by Reason</h3>
+        <apx-chart *ngIf="downtimeSeries.length"
+                   [series]="downtimeSeries" [chart]="downtimeChart.chart"
+                   [labels]="downtimeChart.labels" [colors]="downtimeChart.colors"
+                   [legend]="downtimeChart.legend" [dataLabels]="downtimeChart.dataLabels"
+                   [tooltip]="downtimeChart.tooltip"></apx-chart>
+        <p *ngIf="!downtimeSeries.length" class="text-sm text-gray-400 py-10 text-center">No downtime recorded.</p>
+      </div>
+
+    </div>
+
+    <div class="bg-white dark:bg-[#111] rounded-xl shadow p-5">
+      <h3 class="font-semibold text-gray-800 dark:text-white mb-2">Hourly Energy &amp; Production Trend</h3>
+      <apx-chart *ngIf="trendCategories.length"
+                 [series]="trendSeries" [chart]="trendChart.chart"
+                 [stroke]="trendChart.stroke" [plotOptions]="trendChart.plotOptions"
+                 [colors]="trendChart.colors" [dataLabels]="trendChart.dataLabels"
+                 [xaxis]="trendChart.xaxis" [yaxis]="trendChart.yaxis"
+                 [legend]="trendChart.legend" [grid]="trendChart.grid"
+                 [tooltip]="trendChart.tooltip"></apx-chart>
+      <p *ngIf="!trendCategories.length" class="text-sm text-gray-400 py-10 text-center">No trend data for this window.</p>
+    </div>
+
+    <div class="text-right text-xs text-white/70 mt-3">
+      Last updated: {{ updatedAt }}
+    </div>
+
+  </ng-container>
+
+</div>

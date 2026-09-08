@@ -16,6 +16,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { finalize } from 'rxjs';
 import { ShiftsService } from './shifts.service';
+import { DialogFormBase } from '../../shared/dialog-form.base';
 import { ToastService } from '../../core/services/toast.service';
 
 @Component({
@@ -24,7 +25,7 @@ import { ToastService } from '../../core/services/toast.service';
   templateUrl: './shift-form.component.html',
   imports: [CommonModule, ReactiveFormsModule]
 })
-export class ShiftFormComponent implements OnInit {
+export class ShiftFormComponent extends DialogFormBase implements OnInit {
 
   @Input() data: any;
   @Output() saved = new EventEmitter<void>();
@@ -37,7 +38,9 @@ export class ShiftFormComponent implements OnInit {
     private fb: FormBuilder,
     private service: ShiftsService,
     private toast: ToastService
-  ) {}
+  ) { super(); }
+
+  dismiss() { this.close.emit(); }
 
   ngOnInit() {
     this.form = this.fb.group({

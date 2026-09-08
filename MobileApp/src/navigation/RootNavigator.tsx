@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAuthStore } from '../store/authStore';
 import { LoginScreen } from '../screens/auth/LoginScreen';
+import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
 import { BootstrapScreen } from '../screens/BootstrapScreen';
 import { MachineDetailScreen } from '../screens/machine/MachineDetailScreen';
 import { MainTabs } from './MainTabs';
@@ -50,7 +51,10 @@ export function RootNavigator() {
             />
           </>
         ) : (
-          <Stack.Screen name="Login" component={LoginScreen} />
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ animation: 'slide_from_right' }} />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>

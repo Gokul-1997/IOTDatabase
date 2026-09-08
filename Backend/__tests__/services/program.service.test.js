@@ -8,6 +8,11 @@
  *  - deleteProgram: not found → error
  *  - testConnection: blank password falls back to stored one (write-only)
  *  - cleanupStuckTransfers: marks stale PENDING rows FAILED
+ *  - the supervisor authorisation gate on uploadOne
+ *
+ * The OTP gate itself is covered in authorization.service.test.js; here it
+ * is mocked so these tests stay about the transfer mechanics, with two
+ * exceptions that assert the two are actually wired together.
  */
 
 jest.mock('../../src/db', () => require('../helpers/mockDb').mockDb);
@@ -18,22 +23,32 @@ jest.mock('../../src/programs/program.transfer', () => ({
   machineFileExists:       jest.fn(),
   testMachineConnection:   jest.fn()
 }));
+jest.mock('../../src/programs/authorization.service', () => ({
+  assertAuthorized: jest.fn()
+}));
 
 const { mockDb, resetDb } = require('../helpers/mockDb');
 const {
   sendProgramToMachine, machineFileExists, testMachineConnection
 } = require('../../src/programs/program.transfer');
+const { assertAuthorized } = require('../../src/programs/authorization.service');
 const svc = require('../../src/programs/program.service');
 
 const user = { id: 7, company_id: 3 };
+
+/** Shape assertAuthorized resolves to: the verified authorisation row. */
+const VERIFIED = { id: 77, supervisor_id: 42 };
 
 beforeEach(() => {
   resetDb();
   sendProgramToMachine.mockReset();
   machineFileExists.mockReset();
   testMachineConnection.mockReset();
+  assertAuthorized.mockReset();
   // default: nothing on the controller, so transfers are not blocked
   machineFileExists.mockResolvedValue(false);
+  // default: the supervisor has authorised this transfer
+  assertAuthorized.mockResolvedValue(VERIFIED);
 });
 
 describe('program.service.createProgram', () => {
@@ -171,6 +186,120 @@ describe('program.service.transferProgram', () => {
 
     await expect(svc.transferProgram(req)).rejects.toThrow(/machine not found/i);
     expect(sendProgramToMachine).not.toHaveBeenCalled();
+  });
+
+  test('an unauthorised transfer never reaches the controller', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 }
+    );
+    const denied = Object.assign(new Error('needs supervisor authorisation'), {
+      status: 403, code: 'APPROVAL_REQUIRED'
+    });
+    assertAuthorized.mockRejectedValue(denied);
+
+    await expect(svc.transferProgram(req)).rejects.toMatchObject({
+      status: 403, code: 'APPROVAL_REQUIRED'
+    });
+
+    // The gate must sit in front of the FTP layer entirely — not even the
+    // existence probe should open a session against the machine.
+    expect(sendProgramToMachine).not.toHaveBeenCalled();
+    expect(machineFileExists).not.toHaveBeenCalled();
+    // ...and nothing may be written to the transfer log either.
+    expect(mockDb.calls().some(c => /INSERT INTO program_transfers/i.test(c.text))).toBe(false);
+  });
+
+  test('records who authorised alongside who initiated', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 },
+      { rows: [{ id: 102 }], rowCount: 1 },
+      { rows: [], rowCount: 1 }
+    );
+    sendProgramToMachine.mockResolvedValue();
+
+    await svc.transferProgram({ ...req, body: { authorization_id: 77, authorization_code: '123456' } });
+
+    expect(assertAuthorized).toHaveBeenCalledWith(
+      machineRow, user, { authorization_id: 77, code: '123456' }
+    );
+
+    const insert = mockDb.calls()[2];
+    expect(insert.text).toMatch(/authorized_by, authorization_id, authorized_at/);
+    // transferred_by is the operator who clicked; authorized_by the
+    // supervisor who signed it off. The agreement requires both.
+    expect(insert.params.slice(-3)).toEqual([user.id, VERIFIED.supervisor_id, VERIFIED.id]);
+  });
+});
+
+describe('program.service.transferBatch', () => {
+  const programRow = { id: 10, name: 'Flange', file_name: 'O1.nc', content: Buffer.from('G0') };
+  const machineRow = { id: 20, machine_serial_no: 'VMC-01' };
+
+  test('reports a blocked machine as APPROVAL_REQUIRED, not a generic failure', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 }
+    );
+    assertAuthorized.mockRejectedValue(Object.assign(new Error('needs authorisation'), {
+      status: 403, code: 'APPROVAL_REQUIRED'
+    }));
+
+    const res = await svc.transferBatch({
+      user, body: { program_ids: [10], machine_ids: [20] }
+    });
+
+    // Collapsing this into FAILED would tell the operator to retry, when
+    // what they actually need is a code from their supervisor.
+    expect(res.results[0]).toMatchObject({
+      machine_serial: 'VMC-01', status: 'APPROVAL_REQUIRED', code: 'APPROVAL_REQUIRED'
+    });
+    expect(res.succeeded).toBe(0);
+  });
+
+  test('a wrong code costs one attempt for the whole batch, not one per program', async () => {
+    const threePrograms = [
+      { id: 10, name: 'A', file_name: 'A.nc', content: Buffer.from('G0') },
+      { id: 11, name: 'B', file_name: 'B.nc', content: Buffer.from('G0') },
+      { id: 12, name: 'C', file_name: 'C.nc', content: Buffer.from('G0') }
+    ];
+    mockDb.queueResponse(
+      ...threePrograms.map(p => ({ rows: [p], rowCount: 1 })),
+      { rows: [machineRow], rowCount: 1 }
+    );
+    assertAuthorized.mockRejectedValue(Object.assign(new Error('Incorrect code. 4 attempts remaining.'), {
+      status: 403, code: 'INVALID_CODE'
+    }));
+
+    const res = await svc.transferBatch({
+      user, body: { program_ids: [10, 11, 12], machine_ids: [20] }
+    });
+
+    // Verifying per program would spend 3 of the 5 attempts on a single
+    // mistyped code, and 5 selected programs would lock it outright.
+    expect(assertAuthorized).toHaveBeenCalledTimes(1);
+    // Every program still has to be reported, or the operator sees a
+    // partial list and assumes the rest went through.
+    expect(res.results).toHaveLength(3);
+    expect(res.results.every(r => r.status === 'APPROVAL_REQUIRED')).toBe(true);
+  });
+
+  test('an unassigned machine is reported distinctly from a missing code', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 }
+    );
+    assertAuthorized.mockRejectedValue(Object.assign(new Error('no supervisor'), {
+      status: 403, code: 'NO_SUPERVISOR_ASSIGNED'
+    }));
+
+    const res = await svc.transferBatch({
+      user, body: { program_ids: [10], machine_ids: [20] }
+    });
+
+    // This one an admin has to fix, so it must not look like "enter a code".
+    expect(res.results[0].status).toBe('NO_SUPERVISOR');
   });
 });
 

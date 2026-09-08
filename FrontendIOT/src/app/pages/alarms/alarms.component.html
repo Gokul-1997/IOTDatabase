@@ -65,9 +65,16 @@
                   <button (click)="resolve(alarm.id)" class="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">Save</button>
                   <button (click)="resolvingId=null" class="px-2 py-1 bg-gray-200 rounded text-xs hover:bg-gray-300">Cancel</button>
                 </div>
-                <button *ngIf="resolvingId !== alarm.id" (click)="resolvingId=alarm.id" class="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:bg-green-700 transition-colors">
-                  Resolve
-                </button>
+                <div *ngIf="resolvingId !== alarm.id" class="flex gap-1.5">
+                  <button (click)="resolvingId=alarm.id" class="px-3 py-1 bg-green-600 text-white rounded-lg text-xs hover:bg-green-700 transition-colors">
+                    Resolve
+                  </button>
+                  <span *ngIf="ticketedAlarmIds.has(alarm.id)" class="px-3 py-1 bg-gray-100 text-gray-500 rounded-lg text-xs">Ticket created</span>
+                  <button *ngIf="!ticketedAlarmIds.has(alarm.id)" (click)="createTicketFromAlarm(alarm)" [disabled]="creatingTicketId === alarm.id"
+                    class="px-3 py-1 bg-orange-600 text-white rounded-lg text-xs hover:bg-orange-700 transition-colors disabled:opacity-50">
+                    {{ creatingTicketId === alarm.id ? 'Creating…' : 'Create Ticket' }}
+                  </button>
+                </div>
               </ng-container>
             </td>
           </tr>

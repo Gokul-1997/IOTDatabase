@@ -129,122 +129,173 @@
 
 
   <!-- ── FORM MODAL ────────────────────────────────────────────────────────── -->
-  <div *ngIf="showModal" class="modal-backdrop">
-    <div class="bg-common form-modal mat-elevation-z8 border-modal">
+  <div *ngIf="showModal" class="ui-overlay">
+    <div class="ui-dialog ui-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="compTitle">
 
-      
-
-      <form [formGroup]="form" (ngSubmit)="submit()" class="space-y-6">
-        <div class="modal-header border dark:border-[#222]">
-        <h3>{{ editing ? 'Edit Component' : 'Add Component' }}</h3>
-        <button mat-icon-button (click)="closeModal()">
-          <mat-icon>close</mat-icon>
+      <div class="ui-dialog-header">
+        <div>
+          <h2 id="compTitle" class="ui-dialog-title">
+            {{ editing ? 'Edit Component' : 'Add Component' }}
+          </h2>
+          <p class="ui-dialog-subtitle">
+            A part and its cycle time — the basis of every target and OEE figure.
+          </p>
+        </div>
+        <button type="button" class="ui-close" (click)="closeModal()" aria-label="Close without saving">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               class="w-5 h-5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
         </button>
       </div>
 
-  <div class="grid grid-cols-12 gap-5">
+      <form [formGroup]="form" (ngSubmit)="submit()" class="contents">
+        <div class="ui-dialog-body">
 
-    <!-- ROW 1 (3 columns = col-span-4 each) -->
+          <section class="ui-section" aria-labelledby="compSecPart">
+            <h3 id="compSecPart" class="ui-section-title">Part</h3>
 
-    <!-- Machine -->
-    <div class="col-span-12 md:col-span-4 flex flex-col gap-1">
-      <label class="text-sm font-medium">Machine *</label>
-      <select formControlName="machine_id"
-        class="filter-select"
-        [ngClass]="{'border-red-500': form.get('machine_id')?.invalid && form.get('machine_id')?.touched}">
-        <option value="">Select Machine</option>
-        <option *ngFor="let m of machines" [value]="m.id">
-          {{ m.machine_serial_no }}
-        </option>
-      </select>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <div>
+                <label class="ui-label" for="compMachine">
+                  Machine<span class="ui-req" aria-hidden="true">*</span>
+                </label>
+                <select id="compMachine" class="ui-input" formControlName="machine_id" aria-required="true"
+                        [class.is-invalid]="invalid('machine_id')"
+                        [attr.aria-invalid]="invalid('machine_id')"
+                        [attr.aria-describedby]="invalid('machine_id') ? 'compMachineErr' : null">
+                  <option value="">Select a machine</option>
+                  <option *ngFor="let m of machines" [value]="m.id">{{ m.machine_serial_no }}</option>
+                </select>
+                <p *ngIf="invalid('machine_id')" id="compMachineErr" class="ui-error" role="alert">
+                  Choose the machine this part runs on.
+                </p>
+              </div>
+
+              <div>
+                <label class="ui-label" for="compPartName">
+                  Part name<span class="ui-req" aria-hidden="true">*</span>
+                </label>
+                <input id="compPartName" class="ui-input" formControlName="part_name"
+                       placeholder="e.g. Flange Housing" autocomplete="off" aria-required="true"
+                       [class.is-invalid]="invalid('part_name')"
+                       [attr.aria-invalid]="invalid('part_name')"
+                       [attr.aria-describedby]="invalid('part_name') ? 'compPartNameErr' : null" />
+                <p *ngIf="invalid('part_name')" id="compPartNameErr" class="ui-error" role="alert">
+                  Part name is required.
+                </p>
+              </div>
+
+              <div>
+                <label class="ui-label" for="compPartNo">Part number</label>
+                <input id="compPartNo" class="ui-input" formControlName="part_number"
+                       placeholder="e.g. PN-4471" autocomplete="off" />
+              </div>
+            </div>
+          </section>
+
+          <section class="ui-section" aria-labelledby="compSecRate">
+            <h3 id="compSecRate" class="ui-section-title">Cycle &amp; target</h3>
+            <p class="ui-section-hint">
+              Cycle time sets the performance baseline; target sets the shift goal.
+            </p>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+              <div>
+                <label class="ui-label" for="compOp">Operation number</label>
+                <input id="compOp" class="ui-input" formControlName="operation_number"
+                       placeholder="e.g. OP-10" autocomplete="off" />
+              </div>
+
+              <div>
+                <label class="ui-label" for="compCycle">
+                  Cycle time<span class="ui-req" aria-hidden="true">*</span>
+                </label>
+                <input id="compCycle" class="ui-input" formControlName="cycle_time"
+                       maxlength="8" placeholder="00:00:00" inputmode="numeric"
+                       (input)="formatCycleTime($event)" aria-required="true"
+                       [class.is-invalid]="invalid('cycle_time')"
+                       [attr.aria-invalid]="invalid('cycle_time')"
+                       [attr.aria-describedby]="invalid('cycle_time') ? 'compCycleErr' : 'compCycleHint'" />
+                <p *ngIf="invalid('cycle_time')" id="compCycleErr" class="ui-error" role="alert">
+                  Enter the cycle time as hh:mm:ss.
+                </p>
+                <p *ngIf="!invalid('cycle_time')" id="compCycleHint" class="ui-hint">Format hh:mm:ss</p>
+              </div>
+
+              <div>
+                <label class="ui-label" for="compTarget">
+                  Target<span class="ui-req" aria-hidden="true">*</span>
+                </label>
+                <div class="ui-unit-wrap">
+                  <input id="compTarget" class="ui-input" type="number" inputmode="numeric" min="0"
+                         formControlName="target" placeholder="250" aria-required="true"
+                         [class.is-invalid]="invalid('target')"
+                         [attr.aria-invalid]="invalid('target')"
+                         [attr.aria-describedby]="invalid('target') ? 'compTargetErr' : null" />
+                  <span class="ui-unit" aria-hidden="true">pcs</span>
+                </div>
+                <p *ngIf="invalid('target')" id="compTargetErr" class="ui-error" role="alert">
+                  Target quantity is required.
+                </p>
+              </div>
+
+              <div>
+                <label class="ui-label" for="compFactor">Multiplication factor</label>
+                <input id="compFactor" class="ui-input" type="number" inputmode="numeric" min="1"
+                       formControlName="multiplication_factor" placeholder="1"
+                       aria-describedby="compFactorHint" />
+                <p id="compFactorHint" class="ui-hint">Parts produced per cycle.</p>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        <div class="ui-dialog-footer is-split">
+          <p class="ui-hint !mt-0"><span class="ui-req" aria-hidden="true">*</span> Required fields</p>
+          <div class="flex items-center gap-2">
+            <button type="button" class="ui-btn ui-btn-ghost" (click)="closeModal()">Cancel</button>
+            <button type="submit" class="ui-btn ui-btn-primary" [disabled]="form.invalid">
+              {{ editing ? 'Save changes' : 'Add component' }}
+            </button>
+          </div>
+        </div>
+      </form>
     </div>
-
-    <!-- Part Name -->
-    <div class="col-span-12 md:col-span-4 flex flex-col gap-1">
-      <label class="text-sm font-medium">Part Name *</label>
-      <input type="text" formControlName="part_name"
-        class="filter-select" />
-    </div>
-
-    <!-- Part Number -->
-    <div class="col-span-12 md:col-span-4 flex flex-col gap-1">
-      <label class="text-sm font-medium">Part Number</label>
-      <input type="text" formControlName="part_number"
-        class="filter-select" />
-    </div>
-
-
-    <!-- ROW 2 (4 columns = col-span-3 each) -->
-
-    <!-- Operation -->
-    <div class="col-span-12 md:col-span-3 flex flex-col gap-1">
-      <label class="text-sm font-medium">Operation Number</label>
-      <input type="text" formControlName="operation_number"
-        class="filter-select" />
-    </div>
-
-    <!-- Cycle Time -->
-    <div class="col-span-12 md:col-span-3 flex flex-col gap-1">
-      <label class="text-sm font-medium">Cycle Time *</label>
-      <input type="text" maxlength="8" placeholder="00:00:00"
-        formControlName="cycle_time"
-        (input)="formatCycleTime($event)"
-        class="filter-select" />
-    </div>
-
-    <!-- Target -->
-    <div class="col-span-12 md:col-span-3 flex flex-col gap-1">
-      <label class="text-sm font-medium">Target *</label>
-      <input type="number" formControlName="target"
-        class="filter-select" />
-    </div>
-
-    <!-- Factor -->
-    <div class="col-span-12 md:col-span-3 flex flex-col gap-1">
-      <label class="text-sm font-medium">Multiplication Factor</label>
-      <input type="number" formControlName="multiplication_factor"
-        class="filter-select" />
-    </div>
-
   </div>
-
-  <!-- Footer -->
-  <div class="flex justify-end gap-3 pt-4 border-t dark:border-t-[#222]">
-    <button type="button"
-      (click)="closeModal()"
-      class="btn-secondary">
-      Cancel
-    </button>
-
-    <button type="submit"
-      [disabled]="form.invalid"
-      class="btn-primary">
-      {{ editing ? 'Update' : 'Save' }}
-    </button>
-  </div>
-
-</form>
-    </div>
-  </div>
-
 
   <!-- ── DELETE CONFIRM ────────────────────────────────────────────────────── -->
-  <div *ngIf="deleteTarget" class="modal-backdrop">
-    <div class="delete-modal mat-elevation-z8">
-      <div class="delete-icon-wrap">
-        <mat-icon>delete_forever</mat-icon>
+  <div *ngIf="deleteTarget" class="ui-overlay">
+    <div class="ui-dialog ui-dialog-sm" role="alertdialog" aria-modal="true"
+         aria-labelledby="delTitle" aria-describedby="delBody">
+      <div class="ui-dialog-header">
+        <div class="flex items-start gap-3">
+          <span class="ui-danger-icon" aria-hidden="true">
+            <mat-icon>delete_forever</mat-icon>
+          </span>
+          <div>
+            <h2 id="delTitle" class="ui-dialog-title">Delete Component</h2>
+            <p id="delBody" class="ui-dialog-subtitle">
+              Delete <strong>{{ deleteTarget.part_name }}</strong>? This cannot be undone.
+            </p>
+          </div>
+        </div>
       </div>
-      <h3>Delete Component</h3>
-      <p>
-        Are you sure you want to delete
-        <strong>{{ deleteTarget.part_name }}</strong>?<br>
-        This action cannot be undone.
-      </p>
-      <div class="modal-actions">
-        <button class="btn-cancel" (click)="cancelDelete()" [disabled]="deleting">Cancel</button>
-        <button class="btn-danger" (click)="doDelete()" [disabled]="deleting">
-          <mat-spinner *ngIf="deleting" diameter="18"></mat-spinner>
-          <mat-icon *ngIf="!deleting">delete</mat-icon>
+
+      <div class="ui-dialog-body">
+        <p class="ui-alert ui-alert-warn">
+          Historical records that reference it are kept, but it will no longer
+          be available to select.
+        </p>
+      </div>
+
+      <div class="ui-dialog-footer">
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="cancelDelete()" [disabled]="deleting">
+          Cancel
+        </button>
+        <button type="button" class="ui-btn ui-btn-danger" (click)="doDelete()" [disabled]="deleting">
+          <span *ngIf="deleting" class="ui-spinner" aria-hidden="true"></span>
           {{ deleting ? 'Deleting…' : 'Delete' }}
         </button>
       </div>

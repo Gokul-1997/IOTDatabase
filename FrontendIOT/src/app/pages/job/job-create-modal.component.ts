@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Output, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DialogFormBase } from '../../shared/dialog-form.base';
 import { JobService } from './job.service';
 
 @Component({
@@ -9,7 +10,7 @@ import { JobService } from './job.service';
   imports: [CommonModule, FormsModule],
   templateUrl: './job-create-modal.component.html'
 })
-export class JobCreateModalComponent implements OnInit {
+export class JobCreateModalComponent extends DialogFormBase implements OnInit {
 
   @Output() close = new EventEmitter();
 
@@ -24,7 +25,9 @@ export class JobCreateModalComponent implements OnInit {
   saving    = false;
   error     = '';
 
-  constructor(private service: JobService) {}
+  constructor(private service: JobService) { super(); }
+
+  dismiss() { this.cancel(); }
 
   ngOnInit() {
     this.loadData();
@@ -37,6 +40,7 @@ export class JobCreateModalComponent implements OnInit {
   loadData() {
     this.service.getAvailableMachines().subscribe((res: any) => {
       this.machines = res.data || [];
+      this.touch();
     });
   }
 
@@ -46,6 +50,7 @@ export class JobCreateModalComponent implements OnInit {
     if (this.form.machine_id) {
       this.service.getComponents(this.form.machine_id).subscribe((res: any) => {
         this.components = res.data || [];
+        this.touch();
       });
     }
   }

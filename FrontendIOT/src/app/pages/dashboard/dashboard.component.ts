@@ -164,9 +164,23 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const incoming: any[] = res.machines || [];
     this.shift = res.shift || this.shift;
 
+    // Seed the staleness clock (see patchMetrics for the full explanation)
+    // for machines the backend itself already confirmed aren't OFFLINE —
+    // needed on first load and for machines appearing mid-session too, not
+    // just the patchMetrics path, or those two cases stay unseeded until a
+    // socket packet arrives (checkStaleStatus's `if (!lastSeen) continue`
+    // just leaves them alone rather than marking OFFLINE, but a stale
+    // machine that goes silent right after appearing would never be
+    // detected without this).
+    const nowSec = Math.floor(Date.now() / 1000);
+    const seedFreshness = (m: any) => {
+      if (m.status !== 'OFFLINE') m.received_at = nowSec;
+    };
+
     /* First load — set everything directly */
     if (this.machines.length === 0) {
       this.machines = incoming;
+      this.machines.forEach(seedFreshness);
       this.summary  = res.summary || {};
       this.machineMap.clear();
       for (const m of this.machines) {
@@ -180,6 +194,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     for (const fresh of incoming) {
       const existing = this.machineMap.get(fresh.machine_id);
       if (!existing) {
+        seedFreshness(fresh);
         this.machines.push(fresh);
         this.machineMap.set(fresh.machine_id, fresh);
         continue;
@@ -212,8 +227,39 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (source.operator_name !== undefined) target.operator_name = source.operator_name;
     if (source.part_name     !== undefined) target.part_name     = source.part_name;
     if (source.component_id  !== undefined) target.component_id  = source.component_id;
-    // ✅ received_at → copied from API so staleness timer stays accurate between socket events
-    if (source.received_at   !== undefined) target.received_at   = source.received_at;
+
+    // BUG FIX — permanent, root-cause fix (see MobileApp/src/screens/dashboard/DashboardScreen.tsx
+    // for the twin of this fix, applied there first):
+    //
+    // The comment below this block used to say received_at "is copied from
+    // API so staleness timer stays accurate between socket events" — but
+    // Backend/src/dashboard/dashboard.service.js's list endpoint has never
+    // actually returned a received_at field per machine, so
+    // `source.received_at` was always undefined and that copy was dead code.
+    // In practice received_at (and therefore checkStaleStatus's exemption
+    // from going OFFLINE) was ONLY ever refreshed by socket packets.
+    //
+    // Consequence: for any account whose socket never receives updates —
+    // no plant_id (server only broadcasts to `plant:${plant_id}` rooms, see
+    // Backend/src/server.js `io.to(...).emit('machineUpdate', ...)`, so a
+    // company-wide/admin account can't join one), a blocked network, or any
+    // other socket failure — every machine's status/alarm silently freezes
+    // at whatever it was on the very first load and never updates again,
+    // even though run_time/utilization/etc. keep refreshing normally every
+    // 30s. That's a real bug, just a quiet one (stale-but-plausible) rather
+    // than mobile's louder one (everything visibly flips to OFFLINE).
+    //
+    // Fix: source.status is computed server-side from real received_at
+    // freshness on every single poll (same 60s OFFLINE_THRESHOLD_SEC this
+    // component uses) — so "REST says this machine isn't OFFLINE" is itself
+    // a fully valid, socket-independent "seen recently" signal. Refresh the
+    // staleness clock from it every poll. status/alarm displayed on screen
+    // are still socket-owned for instant updates when the socket IS
+    // connected; this only makes the fallback path self-correcting instead
+    // of permanently frozen.
+    if (source.status !== undefined && source.status !== 'OFFLINE') {
+      target.received_at = Math.floor(Date.now() / 1000);
+    }
     // ❌ status  → socket owns this (real-time); staleness timer handles offline detection
     // ❌ alarm   → socket owns this
   }

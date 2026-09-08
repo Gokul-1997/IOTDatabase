@@ -11,6 +11,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule }  from '@angular/forms';
 import { ReportsService, ReportFilters, ReportType } from './reports.service';
 import { AuthService } from '../../core/services/auth.service';
+import { UiTabsDirective } from '../../shared/ui-tabs.directive';
 
 /* ── Column definition ── */
 interface ColDef {
@@ -67,7 +68,7 @@ const COL_DEFS: Record<ReportType, ColDef[]> = {
 @Component({
   standalone: true,
   selector: 'app-reports',
-  imports: [CommonModule, FormsModule],
+  imports: [UiTabsDirective, CommonModule, FormsModule],
   templateUrl: './reports.html',
   styleUrl: './reports.scss',
   changeDetection: ChangeDetectionStrategy.OnPush

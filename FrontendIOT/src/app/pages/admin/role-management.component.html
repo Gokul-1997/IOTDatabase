@@ -134,30 +134,47 @@
 </div>
 
 <!-- ──────────────── CREATE ROLE MODAL ──────────────── -->
-<div *ngIf="showCreateModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm">
-    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700">
-      <h2 class="text-xl font-bold text-gray-800 dark:text-white">Create New Role</h2>
-      <button (click)="closeCreateModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+<div *ngIf="showCreateModal" class="ui-overlay">
+  <div class="ui-dialog ui-dialog-sm">
+    <div class="ui-dialog-header">
+      <div>
+        <h2 class="ui-dialog-title">Create New Role</h2>
+        <p class="ui-dialog-subtitle">Name it now, then choose what it can do.</p>
+      </div>
+      <button (click)="closeCreateModal()" class="ui-close" aria-label="Close">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
       </button>
     </div>
-    <div class="p-6">
-      <label class="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">Role Name *</label>
-      <input [(ngModel)]="createForm.role_name" type="text"
-        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-        placeholder="e.g., SUPERVISOR, OPERATOR, VIEWER">
-      <p class="text-xs text-gray-400 mt-1.5">Use uppercase names like SUPERVISOR, OPERATOR</p>
+    <div class="ui-dialog-body">
+      <div class="ui-field">
+        <label class="ui-label" for="roleName">
+          Role name<span class="ui-req" aria-hidden="true">*</span>
+        </label>
+        <input id="roleName" [(ngModel)]="createForm.role_name" type="text"
+               class="ui-input" autocomplete="off"
+               placeholder="e.g. SETTER, SUPERVISOR, OPERATOR"
+               aria-describedby="roleNameHint">
+        <p id="roleNameHint" class="ui-hint">Uppercase, one word — this is how it appears when assigning users.</p>
+      </div>
+
+      <!-- Explains the link between this role and machine assignment, which
+           is otherwise invisible until someone reaches the user form. -->
+      <p class="ui-alert ui-alert-info mt-4">
+        After creating the role, open <strong>Permissions</strong> to choose what it can do.
+        Granting <strong>Program Transfer → Send to Machine</strong> makes it a machine-scoped
+        role: users given it are then assigned specific machines, and their code authorises
+        transfers to those machines.
+      </p>
     </div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-700">
+    <div class="ui-dialog-footer">
       <button (click)="closeCreateModal()"
-        class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+        class="ui-btn ui-btn-ghost">
         Cancel
       </button>
       <button (click)="createRole()" [disabled]="loading"
-        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+        class="ui-btn ui-btn-primary">
         {{ loading ? 'Creating...' : 'Create Role' }}
       </button>
     </div>
@@ -165,16 +182,16 @@
 </div>
 
 <!-- ──────────────── PERMISSION ASSIGNMENT MODAL ──────────────── -->
-<div *ngIf="showPagesModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-  <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-    <div class="flex items-center justify-between p-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
+<div *ngIf="showPagesModal" class="ui-overlay">
+  <div class="ui-dialog ui-dialog-lg">
+    <div class="ui-dialog-header">
       <div>
-        <h2 class="text-xl font-bold text-gray-800 dark:text-white">
+        <h2 class="ui-dialog-title">
           Permissions: <span class="text-blue-600">{{ selectedRole?.role_name }}</span>
         </h2>
-        <p class="text-sm text-gray-500 mt-0.5">Select which pages and actions (View / Create / Edit / Delete) this role can perform</p>
+        <p class="ui-dialog-subtitle">What this role can open, and what it can do there.</p>
       </div>
-      <button (click)="closePagesModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+      <button (click)="closePagesModal()" class="ui-close" aria-label="Close">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
@@ -188,7 +205,7 @@
     </div>
 
     <!-- Scrollable body -->
-    <div *ngIf="permissionModules.length > 0" class="overflow-y-auto flex-1 p-6">
+    <div *ngIf="permissionModules.length > 0" class="ui-dialog-body">
       <div *ngFor="let group of permissionGroups" class="mb-6">
         <!-- Group Header -->
         <div class="flex items-center gap-2 mb-3 pb-2 border-b-2 border-gray-200 dark:border-gray-600">
@@ -240,11 +257,11 @@
       </span>
       <div class="flex gap-3">
         <button (click)="closePagesModal()"
-          class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium">
+          class="ui-btn ui-btn-ghost">
           Cancel
         </button>
         <button (click)="savePageAccess()" [disabled]="loading"
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium">
+          class="ui-btn ui-btn-primary">
           {{ loading ? 'Saving...' : 'Save Permissions' }}
         </button>
       </div>

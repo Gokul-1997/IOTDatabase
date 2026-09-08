@@ -4,6 +4,7 @@ import { CommonModule } from '@angular/common';
 import { forkJoin } from 'rxjs';
 
 import { OperatorService } from './operator.service';
+import { DialogFormBase } from '../../shared/dialog-form.base';
 import { ToastService } from '../../core/services/toast.service';
 import { MatIconModule } from '@angular/material/icon';
 
@@ -13,7 +14,7 @@ import { MatIconModule } from '@angular/material/icon';
   templateUrl: './operator-form.component.html',
   imports: [CommonModule, ReactiveFormsModule, MatIconModule]
 })
-export class OperatorFormComponent implements OnInit {
+export class OperatorFormComponent extends DialogFormBase implements OnInit {
 
   @Input() data: any;
   @Output() saved = new EventEmitter<void>();
@@ -29,7 +30,9 @@ export class OperatorFormComponent implements OnInit {
     private service: OperatorService,
     private toast: ToastService,
     private cdr: ChangeDetectorRef
-  ) {}
+  ) { super(); }
+
+  dismiss() { this.close.emit(); }
 
   ngOnInit() {
     this.form = this.fb.group({

@@ -218,116 +218,10 @@
 }
 
 // ── MODAL BACKDROP ─────────────────────────────────────────────────────────
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
+/* The delete-confirm dialog moved to the shared .ui-dialog system
+   (styles/_dialog.scss), so its bespoke .modal-backdrop / .delete-modal /
+   .btn-cancel / .btn-danger rules were dead and have been removed. */
 
-.delete-modal {
-  background: #fff;
-  border-radius: 16px;
-  padding: 32px 28px;
-  width: 100%;
-  max-width: 400px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-
-  .delete-icon-wrap {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    background: #fff5f5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    mat-icon {
-      color: #e03131;
-      font-size: 32px;
-      width: 32px;
-      height: 32px;
-    }
-  }
-
-  h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #212529;
-  }
-
-  p {
-    margin: 0;
-    font-size: 0.875rem;
-    color: #6c757d;
-    line-height: 1.6;
-  }
-}
-
-.error-banner {
-  width: 100%;
-  background: #fff0f0;
-  border: 1px solid #ffc9c9;
-  color: #c92a2a;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 0.82rem;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 12px;
-  width: 100%;
-  margin-top: 4px;
-}
-
-.btn-cancel {
-  flex: 1;
-  height: 42px;
-  border-radius: 10px;
-  border: 1.5px solid #dee2e6;
-  background: #fff;
-  color: #495057;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-
-  &:hover:not(:disabled) { background: #f1f3f5; }
-  &:disabled { opacity: 0.6; cursor: not-allowed; }
-}
-
-.btn-danger {
-  flex: 1;
-  height: 42px;
-  border-radius: 10px;
-  border: none;
-  background: #e03131;
-  color: #fff;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background 0.15s;
-
-  mat-icon { font-size: 18px; width: 18px; height: 18px; }
-
-  &:hover:not(:disabled) { background: #c92a2a; }
-  &:disabled { opacity: 0.6; cursor: not-allowed; }
-}
-
-// ── API KEY CELL ───────────────────────────────────────────────────────────
 .api-key-td {
   display: flex;
   align-items: center;
@@ -400,5 +294,4 @@
     }
   }
 
-  .delete-modal { background: #12203a; h3 { color: #f1f3f5; } }
 }

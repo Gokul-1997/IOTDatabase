@@ -13,31 +13,60 @@
   <div class="bg-top-bar">
     <div class="toolbar-left flex gap-2 items-center">
       <mat-icon class="title-icon">work</mat-icon>
-      <h2 class="text-xl font-bold">Supervisor Jobs</h2>
+      <h2 class="text-xl font-bold">Jobs</h2>
     </div>
     <div class="toolbar-right flex gap-2 items-center">
       <button class="btn-primary" (click)="openCreate()" *ngIf="auth.hasAction('job', 'create')">
         <mat-icon>add</mat-icon>
         Create Job
       </button>
-    <button class="flex gap-2 items-center"
-      (click)="tab = 'active'"
-      [class]="tab === 'active'
-        ? 'px-5 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-800 text-white'
-        : 'px-5 py-2 rounded-lg text-sm font-semibold bg-green-700 hover:bg-green-800 text-white dark:bg-green-700 dark:text-white'">
-        <mat-icon>work</mat-icon>
-      Active Jobs
-    </button>
-    <button class="flex gap-2 items-center"
-      (click)="tab = 'history'"
-      [class]="tab === 'history'
-        ? 'px-5 py-2 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-800 text-white'
-        : 'px-5 py-2 rounded-lg text-sm font-semibold bg-indigo-700 hover:bg-indigo-800 text-white dark:bg-indigo-700 dark:text-white'">
-        <mat-icon>sticky_note_2</mat-icon>
-      Job History
-    </button>
-
     </div>
+  </div>
+
+  <!--
+    Segmented control, kept separate from the action toolbar.
+
+    The two buttons this replaces painted the SAME colour whether or not
+    they were selected — the selected and unselected branches of the class
+    binding were identical — so there was no way to tell which view you
+    were looking at. Selection is now carried by fill, weight, a count and
+    aria-pressed, not by hue alone.
+  -->
+  <!--
+    Segmented control on its own surface.
+
+    The two buttons this replaces painted the SAME colour whether or not
+    they were selected — the selected and unselected branches of the class
+    binding were identical — so there was no way to tell which view you
+    were looking at. Selection is now carried by fill, weight, a count and
+    aria-pressed, not by hue alone.
+
+    The bar is white because this page sits on a saturated gradient, where
+    secondary grey text would not clear 4.5:1.
+  -->
+  <div class="ui-viewbar">
+    <div class="ui-segmented" role="group" aria-label="Which jobs to show">
+      <button type="button" class="ui-segment" (click)="tab = 'active'"
+              [class.is-active]="tab === 'active'" [attr.aria-pressed]="tab === 'active'">
+        <mat-icon aria-hidden="true">play_circle</mat-icon>
+        <span>Active jobs</span>
+        <span class="ui-segment-count">{{ activeSource.data.length }}</span>
+      </button>
+      <button type="button" class="ui-segment" (click)="tab = 'history'"
+              [class.is-active]="tab === 'history'" [attr.aria-pressed]="tab === 'history'">
+        <mat-icon aria-hidden="true">history</mat-icon>
+        <span>Job history</span>
+        <span class="ui-segment-count">{{ historySource.data.length }}</span>
+      </button>
+    </div>
+
+    <!-- Says in words which list is on screen, so the state is never
+         carried by styling alone. -->
+    <p class="ui-viewbar-hint">
+      {{ tab === 'active'
+         ? 'Jobs running right now. Stopping one frees its machine.'
+         : 'Jobs that have already finished, newest first.' }}
+    </p>
   </div>
 
   
@@ -153,8 +182,8 @@
 
   <!-- STOP CONFIRMATION DIALOG -->
   <div *ngIf="confirmRow"
-       class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-    <div class="bg-white dark:bg-gray-800 w-[420px] rounded-xl shadow-2xl p-6 space-y-4 border-modal">
+       class="ui-overlay">
+    <div class="ui-dialog ui-dialog-sm">
 
       <!-- Title -->
       <div class="flex items-center gap-3">

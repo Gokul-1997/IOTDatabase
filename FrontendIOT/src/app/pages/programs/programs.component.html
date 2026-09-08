@@ -1,31 +1,51 @@
-<div class="p-6">
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-bold text-gray-800">Program Transfer</h1>
-      <p class="text-sm text-gray-500 mt-1">Move G-code programs between the server library and CNC controllers (DNC)</p>
+<div class="page-wrapper">
+  <!-- Header bar, matching Machines/Components/Jobs. The heading used to be
+       dark grey text straight on the page gradient, which never cleared
+       4.5:1 anywhere on that background. -->
+  <div class="bg-top-bar">
+    <div class="toolbar-left">
+      <div class="page-title">
+        <mat-icon class="title-icon">swap_horiz</mat-icon>
+        <div>
+          <h2>Program Transfer</h2>
+        </div>
+        <span class="subtitle">G-code between the server library and CNC controllers (DNC)</span>
+      </div>
     </div>
-    <button *ngIf="tab === 'programs'" (click)="showUpload = true"
-      class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors">
-      + Upload Program
-    </button>
+    <div class="toolbar-right">
+      <button *ngIf="tab === 'programs'" class="btn-primary" (click)="showUpload = true">
+        <mat-icon>upload_file</mat-icon>
+        Upload Program
+      </button>
+    </div>
   </div>
 
-  <!-- Tabs -->
-  <div class="flex gap-2 mb-6">
-    <button (click)="switchTab('programs')"
-      class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-      [class]="tab === 'programs' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'">
-      Programs
+  <!-- Tabs — same folder-tab pattern as Reports, so the selected view and
+       the sheet it belongs to read as one surface. -->
+  <div class="ui-tabs" role="tablist" uiTabs aria-label="Program view">
+    <button type="button" role="tab" class="ui-tab" id="tab-programs"
+            [class.is-active]="tab === 'programs'"
+            [attr.aria-selected]="tab === 'programs'"
+            aria-controls="panel-programs"
+            [attr.tabindex]="tab === 'programs' ? 0 : -1"
+            (click)="switchTab('programs')">
+      <span class="ui-tab-icon" aria-hidden="true">📁</span>Programs
+      <span class="ui-tab-count">{{ total }}</span>
     </button>
-    <button (click)="switchTab('history')"
-      class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-      [class]="tab === 'history' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'">
-      Transfer History
+    <button type="button" role="tab" class="ui-tab" id="tab-history"
+            [class.is-active]="tab === 'history'"
+            [attr.aria-selected]="tab === 'history'"
+            aria-controls="panel-history"
+            [attr.tabindex]="tab === 'history' ? 0 : -1"
+            (click)="switchTab('history')">
+      <span class="ui-tab-icon" aria-hidden="true">🕓</span>Transfer History
+      <span class="ui-tab-count">{{ transfersTotal }}</span>
     </button>
   </div>
 
   <!-- ══════════ TRANSFER WORKSPACE ══════════ -->
-  <ng-container *ngIf="tab === 'programs'">
+  <div class="ui-tabpanel" role="tabpanel" id="panel-programs" aria-labelledby="tab-programs"
+       *ngIf="tab === 'programs'">
 
     <!-- machine selector + live connection status -->
     <div class="bg-white rounded-xl shadow-sm border p-4 mb-4 flex flex-wrap items-end gap-4">
@@ -221,14 +241,17 @@
       <button [disabled]="page >= totalPages" (click)="changePage(1)"
         class="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Next</button>
     </div>
-  </ng-container>
-
-  <!-- ══════════ HISTORY ══════════ -->
-  <div *ngIf="loading && tab === 'history'" class="flex items-center justify-center py-12">
-    <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
   </div>
 
-  <div *ngIf="!loading && tab === 'history'" class="bg-white rounded-xl shadow-sm border overflow-hidden">
+  <!-- ══════════ HISTORY ══════════ -->
+  <div class="ui-tabpanel" role="tabpanel" id="panel-history" aria-labelledby="tab-history"
+       *ngIf="tab === 'history'">
+
+    <div *ngIf="loading" class="flex items-center justify-center py-12">
+      <div class="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <div *ngIf="!loading" class="overflow-hidden">
     <table class="w-full text-sm">
       <thead class="bg-gray-50 border-b">
         <tr>
@@ -239,6 +262,7 @@
           <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
           <th class="px-4 py-3 text-left font-semibold text-gray-600">Error</th>
           <th class="px-4 py-3 text-left font-semibold text-gray-600">By</th>
+          <th class="px-4 py-3 text-left font-semibold text-gray-600">Authorised by</th>
           <th class="px-4 py-3 text-left font-semibold text-gray-600">Time</th>
         </tr>
       </thead>
@@ -267,73 +291,201 @@
             </td>
             <td class="px-4 py-3 text-red-600 text-xs max-w-xs truncate">{{ t.error_message || '--' }}</td>
             <td class="px-4 py-3 text-gray-500">{{ t.transferred_by_name || '--' }}</td>
+            <td class="px-4 py-3 text-gray-500">
+              <!-- Downloads are not gated, and rows written before the
+                   supervisor gate shipped have nobody recorded. -->
+              <span *ngIf="t.authorized_by_name">{{ t.authorized_by_name }}</span>
+              <span *ngIf="!t.authorized_by_name" class="text-gray-300">--</span>
+            </td>
             <td class="px-4 py-3 text-gray-500">{{ t.started_at | date:'short' }}</td>
           </tr>
         </ng-container>
         <ng-template #noTransfers>
-          <tr><td colspan="8" class="px-4 py-12 text-center text-gray-400">No transfers yet</td></tr>
+          <tr><td colspan="9" class="px-4 py-12 text-center text-gray-400">No transfers yet</td></tr>
         </ng-template>
       </tbody>
     </table>
   </div>
 
-  <div *ngIf="!loading && tab === 'history' && totalPages > 1" class="flex justify-end mt-4 gap-2">
-    <button [disabled]="page <= 1" (click)="changePage(-1)"
-      class="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Previous</button>
-    <span class="px-3 py-1 text-sm text-gray-600">{{ page }} / {{ totalPages }}</span>
-    <button [disabled]="page >= totalPages" (click)="changePage(1)"
-      class="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Next</button>
+      <div *ngIf="!loading && totalPages > 1" class="flex justify-end mt-4 gap-2">
+        <button [disabled]="page <= 1" (click)="changePage(-1)"
+          class="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Previous</button>
+        <span class="px-3 py-1 text-sm text-gray-600">{{ page }} / {{ totalPages }}</span>
+        <button [disabled]="page >= totalPages" (click)="changePage(1)"
+          class="px-3 py-1 border rounded text-sm disabled:opacity-40 hover:bg-gray-50">Next</button>
+      </div>
   </div>
 
   <!-- ══════════ UPLOAD MODAL ══════════ -->
-  <div *ngIf="showUpload" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-      <h2 class="text-lg font-bold text-gray-800 mb-4">Upload Program</h2>
+  <div *ngIf="showUpload" class="ui-overlay">
+    <div class="ui-dialog ui-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="uploadTitle">
 
-      <label class="block text-sm font-medium text-gray-600 mb-1">G-code File (.nc, .prg, .cnc, .txt, .tap, .eia, .min, .gcode)</label>
-      <input type="file" accept=".nc,.prg,.cnc,.txt,.tap,.eia,.min,.gcode" (change)="onFileSelected($event)"
-        class="block w-full text-sm text-gray-600 mb-4 border rounded-lg p-2" />
+      <div class="ui-dialog-header">
+        <div>
+          <h2 id="uploadTitle" class="ui-dialog-title">Upload Program</h2>
+          <p class="ui-dialog-subtitle">Add a G-code file to the server library.</p>
+        </div>
+        <button type="button" class="ui-close" (click)="showUpload = false" aria-label="Close without uploading">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
 
-      <label class="block text-sm font-medium text-gray-600 mb-1">Program Name</label>
-      <input [(ngModel)]="uploadName" placeholder="e.g. O1234 - Flange Roughing"
-        class="border rounded-lg px-3 py-2 text-sm w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <div class="ui-dialog-body">
+        <div class="ui-field">
+          <label class="ui-label" for="upFile">
+            G-code file<span class="ui-req" aria-hidden="true">*</span>
+          </label>
+          <input id="upFile" type="file" class="ui-input"
+                 accept=".nc,.prg,.cnc,.txt,.tap,.eia,.min,.gcode"
+                 (change)="onFileSelected($event)" aria-describedby="upFileHint" />
+          <p id="upFileHint" class="ui-hint">.nc .prg .cnc .txt .tap .eia .min .gcode — up to 10 MB</p>
+        </div>
 
-      <label class="block text-sm font-medium text-gray-600 mb-1">Description (optional)</label>
-      <textarea [(ngModel)]="uploadDescription" rows="2" placeholder="Notes about this program..."
-        class="border rounded-lg px-3 py-2 text-sm w-full mb-6 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        <div class="ui-field">
+          <label class="ui-label" for="upName">Program name</label>
+          <input id="upName" class="ui-input" [(ngModel)]="uploadName"
+                 placeholder="e.g. O1234 — Flange Roughing" autocomplete="off" />
+        </div>
 
-      <div class="flex justify-end gap-2">
-        <button (click)="showUpload = false" [disabled]="uploading"
-          class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
-        <button (click)="upload()" [disabled]="uploading || !uploadFile"
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
-          {{ uploading ? 'Uploading...' : 'Upload' }}
+        <div class="ui-field">
+          <label class="ui-label" for="upDesc">Description</label>
+          <textarea id="upDesc" class="ui-input" rows="2" [(ngModel)]="uploadDescription"
+                    placeholder="Operation, revision, anything worth knowing later"></textarea>
+        </div>
+      </div>
+
+      <div class="ui-dialog-footer">
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="showUpload = false" [disabled]="uploading">
+          Cancel
+        </button>
+        <button type="button" class="ui-btn ui-btn-primary" (click)="upload()" [disabled]="uploading || !uploadFile">
+          <span *ngIf="uploading" class="ui-spinner" aria-hidden="true"></span>
+          {{ uploading ? 'Uploading…' : 'Upload' }}
         </button>
       </div>
     </div>
   </div>
 
   <!-- ══════════ OVERWRITE CONFIRMATION ══════════ -->
-  <div *ngIf="overwritePrompt" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-      <h2 class="text-lg font-bold text-gray-800 mb-2">File already on the controller</h2>
-      <p class="text-sm text-gray-600 mb-3">
-        These programs already exist on
-        <span class="font-medium">{{ selectedMachine?.machine_serial_no }}</span>:
-      </p>
-      <ul class="text-sm text-gray-700 bg-gray-50 border rounded-lg px-4 py-3 mb-3 max-h-40 overflow-auto">
-        <li *ngFor="let n of overwritePrompt.names" class="py-0.5">{{ n }}</li>
-      </ul>
-      <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-6">
-        Overwriting replaces the file on the machine. Make sure the operator is not currently running it.
-      </p>
+  <div *ngIf="overwritePrompt" class="ui-overlay">
+    <div class="ui-dialog ui-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="overwriteTitle">
 
-      <div class="flex justify-end gap-2">
-        <button (click)="cancelOverwrite()" [disabled]="transferring"
-          class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
-        <button (click)="confirmOverwrite()" [disabled]="transferring"
-          class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
+      <div class="ui-dialog-header">
+        <div>
+          <h2 id="overwriteTitle" class="ui-dialog-title">File already on the controller</h2>
+          <p class="ui-dialog-subtitle">
+            Already present on {{ selectedMachine?.machine_serial_no }}.
+          </p>
+        </div>
+        <button type="button" class="ui-close" (click)="cancelOverwrite()" aria-label="Cancel the transfer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="ui-dialog-body">
+        <ul class="text-sm text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#3e3e3e] rounded-lg px-4 py-3 mb-3 max-h-40 overflow-auto">
+          <li *ngFor="let n of overwritePrompt.names" class="py-0.5">{{ n }}</li>
+        </ul>
+        <p class="ui-alert ui-alert-warn">
+          Overwriting replaces the file on the machine. Make sure the operator is not currently running it.
+        </p>
+      </div>
+
+      <div class="ui-dialog-footer">
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="cancelOverwrite()" [disabled]="transferring">
+          Cancel
+        </button>
+        <button type="button" class="ui-btn ui-btn-danger" (click)="confirmOverwrite()" [disabled]="transferring">
+          <span *ngIf="transferring" class="ui-spinner" aria-hidden="true"></span>
           {{ transferring ? 'Overwriting…' : 'Overwrite' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SUPERVISOR AUTHORISATION ══════════ -->
+  <div *ngIf="authPrompt" class="ui-overlay">
+    <div class="ui-dialog ui-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+
+      <div class="ui-dialog-header">
+        <div>
+          <h2 id="authTitle" class="ui-dialog-title">Supervisor Authorisation</h2>
+          <p class="ui-dialog-subtitle">
+            Sending {{ selectedCount }} program{{ selectedCount === 1 ? '' : 's' }} to
+            {{ authPrompt.machineSerial }}.
+          </p>
+        </div>
+        <button type="button" class="ui-close" (click)="cancelAuthorization()" aria-label="Cancel the transfer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="ui-dialog-body">
+
+        <!-- phase 0: waiting on the server -->
+        <p *ngIf="authPrompt.busy && !authPrompt.authorizationId" class="ui-hint text-center py-6">
+          Sending code to the supervisor…
+        </p>
+
+        <!-- phase 1: more than one supervisor covers this machine -->
+        <div *ngIf="authPrompt.choices && !authPrompt.busy">
+          <label class="ui-label">Which supervisor is authorising this transfer?</label>
+          <div class="grid gap-2 max-h-48 overflow-auto">
+            <button *ngFor="let s of authPrompt.choices" type="button"
+                    class="ui-toggle text-left" (click)="requestCode(s.id)">
+              <span><span class="ui-toggle-label">{{ s.username }}</span></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- phase 2: enter the code -->
+        <div *ngIf="authPrompt.authorizationId">
+          <p class="ui-hint !mt-0 mb-3">
+            A one-time code was sent to
+            <span class="font-medium">{{ authPrompt.supervisorName }}</span>&nbsp;({{ authPrompt.sentTo }}).
+          </p>
+
+          <label class="ui-label" for="authCode">Authorisation code</label>
+          <input id="authCode" class="ui-input text-lg tracking-[0.4em] text-center"
+                 [(ngModel)]="authPrompt.code" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" placeholder="000000" [disabled]="authPrompt.busy"
+                 (keyup.enter)="confirmAuthorization()"
+                 [class.is-invalid]="!!authPrompt.error"
+                 [attr.aria-invalid]="!!authPrompt.error"
+                 [attr.aria-describedby]="authPrompt.error ? 'authCodeErr' : 'authCodeHint'" />
+
+          <p *ngIf="authPrompt.error" id="authCodeErr" class="ui-error" role="alert">
+            {{ authPrompt.error }}
+          </p>
+
+          <p id="authCodeHint" class="ui-hint">
+            Expires in 10 minutes and works only for this machine.
+            <button type="button" (click)="requestCode()" [disabled]="authPrompt.busy"
+                    class="text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50">
+              Resend code
+            </button>
+          </p>
+
+          <p class="ui-alert ui-alert-warn mt-4">
+            Confirm the machine is safe before authorising. A wrong program can crash the spindle.
+          </p>
+        </div>
+      </div>
+
+      <div class="ui-dialog-footer">
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="cancelAuthorization()" [disabled]="transferring">
+          Cancel
+        </button>
+        <button *ngIf="authPrompt.authorizationId" type="button" class="ui-btn ui-btn-danger"
+                (click)="confirmAuthorization()" [disabled]="authPrompt.busy || !authPrompt.code">
+          <span *ngIf="authPrompt.busy" class="ui-spinner" aria-hidden="true"></span>
+          {{ authPrompt.busy ? 'Authorising…' : 'Authorise & Send' }}
         </button>
       </div>
     </div>

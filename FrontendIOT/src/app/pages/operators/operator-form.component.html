@@ -1,109 +1,123 @@
-<div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-  <div class="bg-common w-[640px] rounded-xl p-6 max-h-[90vh] overflow-auto op-modal border-modal">
+<div class="ui-overlay">
+  <div class="ui-dialog ui-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="operatorFormTitle">
 
-    <div class="modal-header border-b-red-200 border">
-        <h3>{{ data ? 'Edit Operator' : 'Create Operator' }}</h3>
-        <button mat-icon-button (click)="close.emit()">
-          <mat-icon>close</mat-icon>
-        </button>
-      </div>
-
-    
-
-    <form [formGroup]="form">
+    <div class="ui-dialog-header">
       <div>
-      <div class="flex gap-4 flex-grow">
-      <!-- Operator Code -->
-      <div class="mb-3 flex-1">
-        <label class="block text-sm mb-1 font-medium">Employee Id *</label>
-        <input
-          formControlName="operator_code"
-          placeholder="e.g. Employee-001"
-          class="filter-select"
-          [class.border-red-500]="form.get('operator_code')?.invalid && form.get('operator_code')?.touched" />
-        <div *ngIf="form.get('operator_code')?.touched && form.get('operator_code')?.errors?.['required']"
-          class="mt-1 text-xs text-red-500">
-          Employee Id is required.
-        </div>
+        <h2 id="operatorFormTitle" class="ui-dialog-title">
+          {{ data ? 'Edit Operator' : 'Create Operator' }}
+        </h2>
+        <p class="ui-dialog-subtitle">Who runs which machines, on which shift.</p>
       </div>
+      <button type="button" class="ui-close" (click)="close.emit()" aria-label="Close without saving">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             class="w-5 h-5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
 
-      <!-- Operator Name -->
-      <div class="mb-3 flex-1">
-        <label class="block text-sm mb-1 font-medium">Operator Name *</label>
-        <input
-          formControlName="operator_name"
-          placeholder="Full Name"
-          class="filter-select"
-          [class.border-red-500]="form.get('operator_name')?.invalid && form.get('operator_name')?.touched" />
-        <div *ngIf="form.get('operator_name')?.touched && form.get('operator_name')?.errors?.['required']"
-          class="mt-1 text-xs text-red-500">
-          Operator Name is required.
-        </div>
-      </div>
-  </div>
-  <div class="flex gap-4">
-      <!-- Skill Level -->
-      <div class="mb-3 flex-1">
-        <label class="block text-sm mb-1 font-medium">Skill Level</label>
-        <input
-          formControlName="skill_level"
-          placeholder="e.g. Senior"
-          class="filter-select" />
-      </div>
+    <form [formGroup]="form" class="contents">
+      <div class="ui-dialog-body">
 
-      <!-- Shift -->
-      <div class="mb-3 flex-1">
-        <label class="block text-sm mb-1 font-medium">Shift *</label>
-        <select
-          formControlName="shift_id"
-          class="filter-select"
-          [class.border-red-500]="form.get('shift_id')?.invalid && form.get('shift_id')?.touched">
-          <option [ngValue]="null">Select Shift</option>
-          <option *ngFor="let s of shifts" [ngValue]="s.id">
-            {{ s.shift_name }} ({{ s.start_time }} – {{ s.end_time }})
-          </option>
-        </select>
-        <div *ngIf="form.get('shift_id')?.touched && form.get('shift_id')?.errors?.['required']"
-          class="mt-1 text-xs text-red-500">
-          Please select a shift.
-        </div>
-      </div>
-</div>
-      <!-- Machines -->
-      <div class="mb-3">
-        <label class="block text-sm mb-1 font-medium">Machines</label>
-        <div class="rounded filter-select border px-3 py-2 max-h-36 overflow-y-auto flex gap-6">
-          <label *ngFor="let m of machines"
-            class="flex items-center gap-2 py-1 cursor-pointer hover:text-blue-600">
-            <input
-              type="checkbox"
-              class="w-4 h-4 rounded accent-blue-600"
-              [checked]="isMachineSelected(m.id)"
-              (change)="toggleMachine(m.id)" />
-            <span class="text-sm">{{ m.machine_serial_no }}</span>
+        <section class="ui-section" aria-labelledby="opSecWho">
+          <h3 id="opSecWho" class="ui-section-title">Operator details</h3>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+            <div>
+              <label class="ui-label" for="opCode">
+                Employee ID<span class="ui-req" aria-hidden="true">*</span>
+              </label>
+              <input id="opCode" class="ui-input" formControlName="operator_code"
+                     placeholder="e.g. EMP-001" autocomplete="off" aria-required="true"
+                     [class.is-invalid]="invalid('operator_code')"
+                     [attr.aria-invalid]="invalid('operator_code')"
+                     [attr.aria-describedby]="invalid('operator_code') ? 'opCodeErr' : null" />
+              <p *ngIf="invalid('operator_code')" id="opCodeErr" class="ui-error" role="alert">
+                Employee ID is required.
+              </p>
+            </div>
+
+            <div>
+              <label class="ui-label" for="opName">
+                Operator name<span class="ui-req" aria-hidden="true">*</span>
+              </label>
+              <input id="opName" class="ui-input" formControlName="operator_name"
+                     placeholder="Full name" autocomplete="off" aria-required="true"
+                     [class.is-invalid]="invalid('operator_name')"
+                     [attr.aria-invalid]="invalid('operator_name')"
+                     [attr.aria-describedby]="invalid('operator_name') ? 'opNameErr' : null" />
+              <p *ngIf="invalid('operator_name')" id="opNameErr" class="ui-error" role="alert">
+                Operator name is required.
+              </p>
+            </div>
+
+            <div>
+              <label class="ui-label" for="opSkill">Skill level</label>
+              <input id="opSkill" class="ui-input" formControlName="skill_level"
+                     placeholder="e.g. Senior" autocomplete="off" />
+            </div>
+
+            <div>
+              <label class="ui-label" for="opShift">
+                Shift<span class="ui-req" aria-hidden="true">*</span>
+              </label>
+              <select id="opShift" class="ui-input" formControlName="shift_id" aria-required="true"
+                      [class.is-invalid]="invalid('shift_id')"
+                      [attr.aria-invalid]="invalid('shift_id')"
+                      [attr.aria-describedby]="invalid('shift_id') ? 'opShiftErr' : null">
+                <option [ngValue]="null">Select a shift</option>
+                <option *ngFor="let s of shifts" [ngValue]="s.id">
+                  {{ s.shift_name }} ({{ s.start_time }} – {{ s.end_time }})
+                </option>
+              </select>
+              <p *ngIf="invalid('shift_id')" id="opShiftErr" class="ui-error" role="alert">
+                Choose the shift this operator works.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="ui-section" aria-labelledby="opSecMachines">
+          <h3 id="opSecMachines" class="ui-section-title">Assigned machines</h3>
+          <p class="ui-section-hint">
+            Production booked on these machines is credited to this operator.
+          </p>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4 max-h-52 overflow-y-auto">
+            <label *ngFor="let m of machines" class="ui-toggle">
+              <input type="checkbox"
+                     [checked]="isMachineSelected(m.id)"
+                     (change)="toggleMachine(m.id)" />
+              <span>
+                <span class="ui-toggle-label">{{ m.machine_serial_no }}</span>
+              </span>
+            </label>
+          </div>
+          <p *ngIf="machines.length === 0" class="ui-hint">No machines available.</p>
+        </section>
+
+        <section class="ui-section">
+          <label class="ui-toggle">
+            <input type="checkbox" formControlName="is_active" />
+            <span>
+              <span class="ui-toggle-label">Active</span>
+              <span class="ui-toggle-hint">Available for shift and machine assignment</span>
+            </span>
           </label>
-          <p *ngIf="machines.length === 0" class="text-xs text-gray-400 py-1">No machines available</p>
+        </section>
+
+      </div>
+
+      <div class="ui-dialog-footer is-split">
+        <p class="ui-hint !mt-0"><span class="ui-req" aria-hidden="true">*</span> Required fields</p>
+        <div class="flex items-center gap-2">
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="close.emit()">Cancel</button>
+          <button type="button" class="ui-btn ui-btn-primary" (click)="submit()" [disabled]="saving">
+            <span *ngIf="saving" class="ui-spinner" aria-hidden="true"></span>
+            {{ saving ? 'Saving…' : (data ? 'Save changes' : 'Create operator') }}
+          </button>
         </div>
       </div>
-
-      <!-- Active -->
-      <div class="mb-4 flex items-center gap-3">
-        <input type="checkbox" formControlName="is_active" id="is_active"
-          class="w-4 h-4 rounded" />
-        <label for="is_active" class="text-sm font-medium">Active</label>
-      </div>
-
-      <!-- Buttons -->
-      <div class="flex justify-end gap-3">
-        <button type="button" (click)="close.emit()" class="btn-secondary">
-          Cancel
-        </button>
-        <button type="button" (click)="submit()" [disabled]="saving"
-          class="btn-default">
-          {{ saving ? 'Saving…' : (data ? 'Update Operator' : 'Create Operator') }}
-        </button>
-      </div>
-</div>
     </form>
   </div>
 </div>

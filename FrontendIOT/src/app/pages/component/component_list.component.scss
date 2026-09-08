@@ -72,74 +72,14 @@ $radius: 10px;
   span { font-size: 0.82rem; }
 }
 
-// ── MODAL SHARED ──────────────────────────────────────────────────────────
-.modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.80);
-  display: flex; align-items: center; justify-content: center; z-index: 1000;
-}
-
-// ── FORM MODAL ────────────────────────────────────────────────────────────
-.form-modal {
-  border-radius: 16px; width: 100%; max-width: 680px;
-  max-height: 90vh; overflow-y: auto;
-}
-
-.modal-form { padding: 20px 24px 24px; }
-.form-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-
-.field {
-  display: flex; flex-direction: column; gap: 4px;
-  label { font-size: 0.8rem; font-weight: 600; color: #495057; }
-  input, select {
-    height: 40px; border: 1.5px solid #dee2e6; border-radius: 8px;
-    padding: 0 12px; font-size: 0.875rem; outline: none; transition: border-color 0.2s;
-    &:focus { border-color: $blue; box-shadow: 0 0 0 3px rgba(59,91,219,0.1); }
-    &.invalid { border-color: $red; }
-  }
-  .err { font-size: 0.72rem; color: $red; }
-}
-
-.modal-footer {
-  display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;
-}
-.btn-cancel {
-  height: 40px; border-radius: $radius; border: 1.5px solid #dee2e6;
-  background: #fff; color: #495057; font-size: 0.875rem; font-weight: 600;
-  padding: 0 20px; cursor: pointer; transition: background 0.15s;
-  &:hover { background: #f1f3f5; }
-}
-
-// ── DELETE MODAL ──────────────────────────────────────────────────────────
-.delete-modal {
-  background: #fff; border-radius: 16px; padding: 32px 28px;
-  width: 100%; max-width: 400px; text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-  .delete-icon-wrap {
-    width: 60px; height: 60px; border-radius: 50%; background: #fff5f5;
-    display: flex; align-items: center; justify-content: center;
-    mat-icon { color: $red; font-size: 32px; width: 32px; height: 32px; }
-  }
-  h3 { margin: 0; font-size: 1.1rem; font-weight: 700; color: #212529; }
-  p  { margin: 0; font-size: 0.875rem; color: #6c757d; line-height: 1.6; }
-}
-
-.modal-actions { display: flex; gap: 12px; width: 100%; margin-top: 4px; }
-.btn-danger {
-  flex: 1; height: 42px; border-radius: $radius; border: none;
-  background: $red; color: #fff; font-size: 0.875rem; font-weight: 600;
-  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
-  mat-icon { font-size: 18px; width: 18px; height: 18px; }
-  &:hover:not(:disabled) { background: #c92a2a; }
-  &:disabled { opacity: 0.6; cursor: not-allowed; }
-}
-.btn-cancel { flex: 1; }
+/* The add/edit and delete dialogs moved to the shared .ui-dialog system
+   (styles/_dialog.scss). Their bespoke .modal-backdrop / .form-modal /
+   .delete-modal / .field / .btn-cancel / .btn-danger rules were dead and
+   have been removed. */
 
 // ── DARK MODE ─────────────────────────────────────────────────────────────
 :host-context(.dark) {
   .page-title h2 { color: #f1f3f5; }
   .search-box { background: #1e2a3a; border-color: #2d3f55; .search-input { color: #f1f3f5; } }
   .table-card { background: #12203a; }
-  
-  .form-modal, .delete-modal { h3 { color: #f1f3f5; } }
-  .field { input, select { background: #1e2a3a; border-color: #2d3f55; color: #f1f3f5; } }
 }
