@@ -1,5 +1,6 @@
 const svc = require('./dashboard.service');
 const factorySvc = require('./factory.service');
+const maintenanceSvc = require('./maintenance.service');
 
 /* =====================================================
    DASHBOARD (Paginated Machine Cards)
@@ -71,6 +72,17 @@ exports.machineDetail = async (req, res) => {
    FACTORY OVERALL DASHBOARD (Phase 2 · Screen 1)
    GET /dashboard/factory?date=&shift_id=&machine_id=
 ===================================================== */
+/* Phase 2 · Screen 2 — Maintenance Dashboard */
+exports.maintenance = async (req, res) => {
+  try {
+    const data = await maintenanceSvc.getMaintenanceDashboard(req);
+    return res.json({ status: 'success', data });
+  } catch (err) {
+    console.error('Maintenance dashboard error:', err);
+    return res.status(err.status || 500).json({ status: 'error', message: err.message });
+  }
+};
+
 exports.factory = async (req, res) => {
   try {
     const data = await factorySvc.getFactoryDashboard(req);

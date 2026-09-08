@@ -256,20 +256,21 @@ describe('GET /api/jobs/current', () => {
   });
 
   test('TC-JR-41 200 returns current active jobs', async () => {
+    // the list endpoints run the page query and a COUNT together
     mockDb.queueResponse({
       rows: [{
         machine_id: 1, machine_serial_no: 'VMC-1-F',
         job_id: 10, part_name: 'PartA', target_qty: 50,
         started_at: '2026-05-01T08:00:00Z'
       }]
-    });
+    }, { rows: [{ total: 1 }] });
 
     const res = await request(makeApp()).get('/api/jobs/current');
     expect(res.status).toBe(200);
   });
 
   test('TC-JR-42 200 returns empty when no active jobs', async () => {
-    mockDb.queueResponse({ rows: [] });
+    mockDb.queueResponse({ rows: [] }, { rows: [{ total: 0 }] });
 
     const res = await request(makeApp()).get('/api/jobs/current');
     expect(res.status).toBe(200);
@@ -295,7 +296,7 @@ describe('GET /api/jobs/history', () => {
           ended_at: '2026-05-01T20:00:00Z', is_active: false
         }
       ]
-    });
+    }, { rows: [{ total: 1 }] });
 
     const res = await request(makeApp()).get('/api/jobs/history');
     expect(res.status).toBe(200);

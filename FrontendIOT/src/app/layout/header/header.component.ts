@@ -29,6 +29,7 @@ export class HeaderComponent implements OnInit {
   allMenus: any[] = [
     { label: 'Dashboard', path: '/dashboard', icon: 'dashnew', permission: 'page:dashboard' },
     { label: 'Factory', path: '/factory', icon: 'dashnew', permission: 'page:dashboard' },
+    { label: 'Maintenance Dashboard', path: '/maintenance-dashboard', icon: 'dashnew', permission: 'page:dashboard' },
     { label: 'OEE', path: '/oee-reports', icon: 'donutnew', permission: 'page:oee-reports' },
     { label: 'Reports', path: '/reports', icon: 'reportnew', permission: 'page:reports' },
     { label: 'Charts', path: '/charts', icon: 'chartnew', permission: 'page:charts' },

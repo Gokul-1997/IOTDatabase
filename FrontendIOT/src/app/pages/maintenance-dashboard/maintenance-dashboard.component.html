@@ -1,0 +1,259 @@
+<!--
+  Phase 2 · Screen 2 — Maintenance Dashboard.
+
+  Reading order is deliberate: how healthy is the fleet → what is alarming
+  → how is it performing → which machine specifically. Every figure that
+  could be misread carries its own words, so nothing depends on colour.
+-->
+<div class="page-wrapper">
+
+  <!-- ── header ─────────────────────────────────────────────── -->
+  <div class="bg-top-bar">
+    <div class="toolbar-left">
+      <div class="page-title">
+        <mat-icon class="title-icon">health_and_safety</mat-icon>
+        <div><h2>Maintenance Dashboard</h2></div>
+        <span class="subtitle" *ngIf="updatedAt">Updated {{ updatedAt }}</span>
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn-primary" (click)="submit()" [disabled]="loading">
+        <mat-icon>refresh</mat-icon>
+        {{ loading ? 'Loading…' : 'Refresh' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- ── filters ────────────────────────────────────────────── -->
+  <div class="ui-tabpanel mb-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+
+      <div>
+        <label class="ui-label" for="mdDate">Date</label>
+        <input id="mdDate" class="ui-input" type="date"
+               [(ngModel)]="selectedDate" [max]="today" />
+      </div>
+
+      <div>
+        <label class="ui-label" for="mdShift">Shift</label>
+        <select id="mdShift" class="ui-input" [(ngModel)]="selectedShift">
+          <option [ngValue]="null">All shifts</option>
+          <option *ngFor="let s of shifts" [ngValue]="s.id">
+            {{ s.shift_name || s.shift_code }}
+          </option>
+        </select>
+      </div>
+
+      <div>
+        <label class="ui-label" for="mdMachine">Machine</label>
+        <select id="mdMachine" class="ui-input" [(ngModel)]="selectedMachine">
+          <option [ngValue]="null">All machines</option>
+          <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+        </select>
+      </div>
+
+      <div class="flex gap-2 lg:col-span-2">
+        <button type="button" class="ui-btn ui-btn-primary" (click)="submit()" [disabled]="loading">
+          <span *ngIf="loading" class="ui-spinner" aria-hidden="true"></span>
+          {{ loading ? 'Loading…' : 'Apply' }}
+        </button>
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="reset()">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── error ──────────────────────────────────────────────── -->
+  <div *ngIf="errorMsg" class="ui-alert ui-alert-error mb-4" role="alert">{{ errorMsg }}</div>
+
+  <ng-container *ngIf="data as d">
+
+    <!-- ── headline numbers ─────────────────────────────────── -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Total machines</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ d.machines.total }}</p>
+        <p class="ui-hint">{{ d.machines.running }} running · {{ d.machines.idle }} idle</p>
+      </div>
+
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Active alarms</p>
+        <p class="text-3xl font-bold mt-1"
+           [class]="d.alarms.open > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'">
+          {{ d.alarms.open }}
+        </p>
+        <p class="ui-hint">{{ d.alarms.total }} raised in this window</p>
+      </div>
+
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Machine health</p>
+        <p class="text-3xl font-bold mt-1" [class]="healthClass(d.health.percent)">
+          {{ d.health.percent }}<span class="text-lg">%</span>
+        </p>
+        <!-- the agreement never defines "health", so the basis travels with it -->
+        <p class="ui-hint">{{ d.health.healthy }} of {{ d.machines.total }} — {{ d.health.basis }}</p>
+      </div>
+
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Average OEE</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">
+          <ng-container *ngIf="d.oee.oee !== null; else noOee">{{ d.oee.oee }}<span class="text-lg">%</span></ng-container>
+          <ng-template #noOee><span class="text-lg font-medium text-slate-500">Not available</span></ng-template>
+        </p>
+        <p class="ui-hint" *ngIf="d.oee.oee !== null">
+          A {{ d.oee.availability }}% · P {{ d.oee.performance }}% · Q {{ d.oee.quality }}%
+        </p>
+        <p class="ui-hint" *ngIf="d.oee.oee === null">No OEE rollup for this window</p>
+      </div>
+    </div>
+
+    <!-- ── operating status + alarm split ───────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+      <div class="ui-tabpanel">
+        <h3 class="ui-section-title">Operating status</h3>
+        <p class="ui-section-hint">Live state of every machine in the selection.</p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+          <div class="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 p-3">
+            <p class="text-xs font-semibold text-emerald-800 dark:text-emerald-300">Running</p>
+            <p class="text-2xl font-bold text-emerald-800 dark:text-emerald-300">{{ d.machines.running }}</p>
+          </div>
+          <div class="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3">
+            <p class="text-xs font-semibold text-amber-800 dark:text-amber-300">Idle</p>
+            <p class="text-2xl font-bold text-amber-800 dark:text-amber-300">{{ d.machines.idle }}</p>
+          </div>
+          <div class="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-3">
+            <p class="text-xs font-semibold text-red-800 dark:text-red-300">Breakdown</p>
+            <p class="text-2xl font-bold text-red-800 dark:text-red-300">{{ d.machines.breakdown }}</p>
+          </div>
+          <div class="rounded-lg border border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3">
+            <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">Offline</p>
+            <p class="text-2xl font-bold text-slate-700 dark:text-slate-300">{{ d.machines.offline }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="ui-tabpanel">
+        <h3 class="ui-section-title">Alarm summary</h3>
+        <p class="ui-section-hint">Raised between the selected window's start and end.</p>
+
+        <div class="grid grid-cols-3 gap-3 mt-4">
+          <div class="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-3">
+            <p class="text-xs font-semibold text-red-800 dark:text-red-300">Critical</p>
+            <p class="text-2xl font-bold text-red-800 dark:text-red-300">{{ d.alarms.critical }}</p>
+          </div>
+          <div class="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3">
+            <p class="text-xs font-semibold text-amber-800 dark:text-amber-300">Non-critical</p>
+            <p class="text-2xl font-bold text-amber-800 dark:text-amber-300">{{ d.alarms.non_critical }}</p>
+          </div>
+          <div class="rounded-lg border border-sky-200 bg-sky-50 dark:bg-sky-900/20 dark:border-sky-800 p-3">
+            <p class="text-xs font-semibold text-sky-800 dark:text-sky-300">Information</p>
+            <p class="text-2xl font-bold text-sky-800 dark:text-sky-300">{{ d.alarms.information }}</p>
+          </div>
+        </div>
+
+        <p *ngIf="d.alarms.total === 0" class="ui-hint mt-3">
+          No alarms recorded for this window.
+        </p>
+      </div>
+    </div>
+
+    <!-- ── cycle time trend ─────────────────────────────────── -->
+    <div class="ui-tabpanel mb-4">
+      <h3 class="ui-section-title">Cycle time trend</h3>
+      <p class="ui-section-hint">Cutting seconds per part, hour by hour. Gaps are hours with no production.</p>
+
+      <apx-chart *ngIf="hasCycleData"
+        [series]="cycleSeries"
+        [chart]="cycleChart.chart"
+        [stroke]="cycleChart.stroke"
+        [colors]="cycleChart.colors"
+        [dataLabels]="cycleChart.dataLabels"
+        [markers]="cycleChart.markers"
+        [xaxis]="cycleChart.xaxis"
+        [yaxis]="cycleChart.yaxis"
+        [grid]="cycleChart.grid"
+        [tooltip]="cycleChart.tooltip">
+      </apx-chart>
+
+      <p *ngIf="!hasCycleData" class="ui-hint py-10 text-center">
+        No production recorded in this window, so there is no cycle time to plot.
+      </p>
+    </div>
+
+    <!-- ── per-machine detail ───────────────────────────────── -->
+    <div class="ui-tabpanel mb-4">
+      <h3 class="ui-section-title">Machine detail</h3>
+      <p class="ui-section-hint">What each machine is running, and who is on it.</p>
+
+      <div class="overflow-x-auto mt-4">
+        <table class="w-full text-sm">
+          <caption class="sr-only">Machine, component, part, operator, status, spindle load and run time</caption>
+          <thead class="border-b border-slate-200 dark:border-slate-700">
+            <tr class="text-left">
+              <th scope="col" class="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">Machine</th>
+              <th scope="col" class="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">Component</th>
+              <th scope="col" class="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">Part</th>
+              <th scope="col" class="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">Operator</th>
+              <th scope="col" class="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">Status</th>
+              <th scope="col" class="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">Spindle load</th>
+              <th scope="col" class="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">Run time</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            <tr *ngFor="let r of d.rows" class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+              <td class="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{{ r.machine_serial_no }}</td>
+              <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ r.component_id || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ r.part_name || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ r.operator_name || '—' }}</td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-1 rounded-md text-xs font-semibold" [class]="statusClass(rowStatus(r))">
+                  {{ rowStatus(r) }}
+                </span>
+              </td>
+              <!-- an offline machine's last reading is stale; showing it as a
+                   live figure would imply the spindle is still turning -->
+              <td class="px-3 py-2 text-slate-600 dark:text-slate-300">
+                {{ rowStatus(r) === 'OFFLINE' || r.spindle_load == null
+                   ? '—' : (r.spindle_load | number:'1.0-1') + '%' }}
+              </td>
+              <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ hm(r.run_seconds) }}</td>
+            </tr>
+            <tr *ngIf="!d.rows?.length">
+              <td colspan="7" class="px-3 py-10 text-center text-slate-400">
+                No machines match this selection.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!--
+      Honest disclosure rather than empty gauges. These are signed Phase 2
+      requirements that cannot be met with the data currently collected, so
+      the screen says so instead of implying the readings are simply zero.
+    -->
+    <div class="ui-tabpanel" *ngIf="missingSignals.length">
+      <h3 class="ui-section-title">Not currently collected</h3>
+      <p class="ui-section-hint">
+        These readings are not in the machine data feed yet, so they are not shown.
+        They will appear here once the controllers report them.
+      </p>
+      <ul class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <li *ngFor="let s of missingSignals"
+            class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <mat-icon class="!w-4 !h-4 !text-base text-slate-400" aria-hidden="true">remove_circle_outline</mat-icon>
+          {{ s }}
+        </li>
+      </ul>
+    </div>
+
+  </ng-container>
+
+  <!-- ── first load ─────────────────────────────────────────── -->
+  <div *ngIf="!data && !errorMsg" class="ui-tabpanel text-center py-16">
+    <p class="ui-hint">Loading maintenance data…</p>
+  </div>
+
+</div>

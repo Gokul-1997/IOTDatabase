@@ -10,6 +10,10 @@
  * the factory-level view that sits above it.
  */
 const db = require('../db');
+// resolveWindow/scope moved to ./window.js when the Maintenance dashboard
+// needed the same filter behaviour — two screens filtered identically must
+// resolve identically, so there is one copy rather than two.
+const { resolveWindow, scope } = require('./window');
 
 /* Alarm severities are stored as LOW/MEDIUM/HIGH/CRITICAL, but the
    agreement asks for Critical / Non-Critical / Information. */
@@ -26,52 +30,6 @@ const SEVERITY_CLASS = `
  * shift's window, handling the overnight case where a shift starts on
  * one date and ends on the next.
  */
-async function resolveWindow(companyId, { date, shift_id }) {
-  const day = date || new Date().toISOString().slice(0, 10);
-
-  if (!shift_id) {
-    return {
-      from: `${day}T00:00:00+05:30`,
-      to:   `${day}T23:59:59.999+05:30`,
-      day,
-      shift: null
-    };
-  }
-
-  const { rows, rowCount } = await db.query(
-    `SELECT id, shift_code, start_time, end_time
-     FROM shifts WHERE id = $1 AND company_id = $2`,
-    [shift_id, companyId]
-  );
-  if (rowCount === 0) throw new Error('Shift not found or access denied');
-
-  const shift = rows[0];
-  const overnight = String(shift.start_time) > String(shift.end_time);
-
-  // an overnight shift dated the 5th runs 05→06
-  const endDay = overnight
-    ? new Date(new Date(`${day}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10)
-    : day;
-
-  return {
-    from: `${day}T${shift.start_time}+05:30`,
-    to:   `${endDay}T${shift.end_time}+05:30`,
-    day,
-    shift
-  };
-}
-
-/** WHERE fragment + params shared by the rollup queries. */
-function scope(companyId, win, machineId, startIdx = 1) {
-  const params = [companyId, win.from, win.to];
-  let sql = `company_id = $${startIdx} AND hour_start >= $${startIdx + 1} AND hour_start < $${startIdx + 2}`;
-  if (machineId) {
-    params.push(machineId);
-    sql += ` AND machine_id = $${startIdx + 3}`;
-  }
-  return { sql, params };
-}
-
 exports.getFactoryDashboard = async (req) => {
   const companyId  = req.user.company_id;
   const machineId  = req.query.machine_id ? Number(req.query.machine_id) : null;

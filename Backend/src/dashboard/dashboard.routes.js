@@ -8,6 +8,8 @@ router.get('/', auth, ctrl.dashboard);
 
 router.get('/factory', auth, ctrl.factory);
 
+router.get('/maintenance', auth, ctrl.maintenance);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 

@@ -46,13 +46,13 @@
   -->
   <div class="ui-viewbar">
     <div class="ui-segmented" role="group" aria-label="Which jobs to show">
-      <button type="button" class="ui-segment" (click)="tab = 'active'"
+      <button type="button" class="ui-segment" (click)="setTab('active')"
               [class.is-active]="tab === 'active'" [attr.aria-pressed]="tab === 'active'">
         <mat-icon aria-hidden="true">play_circle</mat-icon>
         <span>Active jobs</span>
         <span class="ui-segment-count">{{ activeSource.data.length }}</span>
       </button>
-      <button type="button" class="ui-segment" (click)="tab = 'history'"
+      <button type="button" class="ui-segment" (click)="setTab('history')"
               [class.is-active]="tab === 'history'" [attr.aria-pressed]="tab === 'history'">
         <mat-icon aria-hidden="true">history</mat-icon>
         <span>Job history</span>

@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 import { MatTableDataSource } from '@angular/material/table';
@@ -40,27 +40,60 @@ export class JobListComponent implements OnInit {
   stopping     = false;
   stopError    = '';
 
-  @ViewChild('activePaginator')  activePaginator!:  MatPaginator;
-  @ViewChild('historyPaginator') historyPaginator!: MatPaginator;
+  /*
+   * Setter-based ViewChild, not a plain one.
+   *
+   * Each paginator lives inside an *ngIf on the tab, so on first load only
+   * the active one exists — historyPaginator was undefined when loadHistory()
+   * ran, the `if (this.historyPaginator)` guard silently skipped the
+   * assignment, and nothing ever re-attached it when the tab was switched.
+   * History pagination could therefore never work. Active had the same race
+   * against ngAfterViewInit.
+   *
+   * A setter fires every time the view creates or destroys the element, so
+   * the paginator attaches whenever its tab is shown, however late that is.
+   */
+  @ViewChild('activePaginator') set activePaginator(p: MatPaginator) {
+    if (p) { this.activeSource.paginator = p; this.cdr.markForCheck(); }
+  }
 
-  constructor(private service: JobService, public auth: AuthService) {}
+  @ViewChild('historyPaginator') set historyPaginator(p: MatPaginator) {
+    if (p) { this.historySource.paginator = p; this.cdr.markForCheck(); }
+  }
+
+  constructor(
+    private service: JobService,
+    public auth: AuthService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit() {
     this.loadActive();
     this.loadHistory();
   }
 
+  /** Switch which list is on screen. */
+  setTab(tab: 'active' | 'history') {
+    this.tab = tab;
+    this.cdr.markForCheck();
+  }
+
+  /*
+   * The app runs zoneless (Angular 21, no zone.js), so assigning .data inside
+   * an HTTP callback schedules no render on its own — the tables stayed empty
+   * until the user happened to click something else.
+   */
   loadActive() {
-    this.service.getJobs().subscribe((res: any) => {
-      this.activeSource.data = res.data || [];
-      if (this.activePaginator) this.activeSource.paginator = this.activePaginator;
+    this.service.getJobs().subscribe({
+      next: (res: any) => { this.activeSource.data = res.data || []; this.cdr.markForCheck(); },
+      error: () => { this.activeSource.data = []; this.cdr.markForCheck(); }
     });
   }
 
   loadHistory() {
-    this.service.getJobHistory().subscribe((res: any) => {
-      this.historySource.data = res.data || [];
-      if (this.historyPaginator) this.historySource.paginator = this.historyPaginator;
+    this.service.getJobHistory().subscribe({
+      next: (res: any) => { this.historySource.data = res.data || []; this.cdr.markForCheck(); },
+      error: () => { this.historySource.data = []; this.cdr.markForCheck(); }
     });
   }
 
@@ -93,12 +126,14 @@ export class JobListComponent implements OnInit {
       next: () => {
         this.stopping   = false;
         this.confirmRow = null;
+        this.cdr.markForCheck();
         this.loadActive();
         this.loadHistory();
       },
       error: (err: any) => {
         this.stopping  = false;
         this.stopError = err?.error?.message || 'Failed to stop job.';
+        this.cdr.markForCheck();
       }
     });
   }
