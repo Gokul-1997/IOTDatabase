@@ -90,7 +90,22 @@ exports.getFactoryDashboard = async (req) => {
        FROM company_settings WHERE company_id = $1`, [companyId]
     ),
 
-    /* live machine states: running / idle / breakdown */
+    /* live machine states: running / idle / breakdown / offline
+     *
+     * The LOOKBACK bound is load-bearing, not cosmetic. telemetry_raw is a
+     * Timescale hypertable with ~180 chunks covering months of data; without
+     * a received_at predicate the planner cannot prune chunks, so this
+     * DISTINCT ON walks every chunk. Measured against production: unbounded
+     * had not finished after 227 seconds, bounded returns in ~20ms.
+     *
+     * An hour is far more than the 60s freshness cut-off below, so it cannot
+     * change which machines count as fresh — it only stops the scan reading
+     * data that could never win the DISTINCT ON. Do not remove it.
+     *
+     * offline is derived rather than counted so the four states are mutually
+     * exclusive and always sum to total. Counting it separately meant a
+     * machine that was both stale and alarmed landed in breakdown AND
+     * offline, and the numbers on the card did not add up. */
     db.query(`
       WITH latest AS (
         SELECT DISTINCT ON (t.machine_id)
@@ -98,21 +113,31 @@ exports.getFactoryDashboard = async (req) => {
         FROM telemetry_raw t
         JOIN machines m ON m.id = t.machine_id
         WHERE m.company_id = $1 AND m.is_active
+          AND t.received_at > NOW() - INTERVAL '1 hour'
           ${machineId ? 'AND t.machine_id = $2' : ''}
         ORDER BY t.machine_id, t.received_at DESC
+      ),
+      fresh AS (
+        SELECT * FROM latest WHERE received_at > NOW() - INTERVAL '60 seconds'
+      ),
+      counted AS (
+        SELECT
+          COUNT(*) FILTER (WHERE alarm IS TRUE)::int AS breakdown,
+          COUNT(*) FILTER (WHERE alarm IS NOT TRUE AND machine_status = 'RUNNING')::int AS running,
+          COUNT(*) FILTER (WHERE alarm IS NOT TRUE AND machine_status = 'IDLE')::int    AS idle
+        FROM fresh
       )
       SELECT
-        (SELECT COUNT(*) FROM machines
-          WHERE company_id = $1 AND is_active ${machineId ? 'AND id = $2' : ''})::int AS total,
-        COUNT(*) FILTER (
-          WHERE alarm IS NOT TRUE AND machine_status = 'RUNNING'
-            AND received_at > NOW() - INTERVAL '60 seconds')::int AS running,
-        COUNT(*) FILTER (
-          WHERE alarm IS NOT TRUE AND machine_status = 'IDLE'
-            AND received_at > NOW() - INTERVAL '60 seconds')::int AS idle,
-        COUNT(*) FILTER (WHERE alarm IS TRUE)::int AS breakdown,
-        COUNT(*) FILTER (WHERE received_at <= NOW() - INTERVAL '60 seconds')::int AS offline
-      FROM latest`,
+        tot.total,
+        c.running,
+        c.idle,
+        c.breakdown,
+        (tot.total - c.running - c.idle - c.breakdown)::int AS offline
+      FROM counted c
+      CROSS JOIN (
+        SELECT COUNT(*)::int AS total FROM machines
+        WHERE company_id = $1 AND is_active ${machineId ? 'AND id = $2' : ''}
+      ) tot`,
       machineId ? [companyId, machineId] : [companyId]
     ),
 
