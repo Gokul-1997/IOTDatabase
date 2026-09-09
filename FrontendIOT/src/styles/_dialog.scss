@@ -650,3 +650,31 @@ select.ui-input {
 @media (prefers-reduced-motion: reduce) {
   .ui-tab { transition: none; }
 }
+
+/* ── header nav ────────────────────────────────────────────────
+   Deliberately NOT a scroll container.
+
+   It briefly was, to stop fourteen top-level items forcing the
+   document to 1869px inside a 1440px viewport. That fixed the
+   sideways scroll but broke the nav in two worse ways: seven items
+   scrolled out of sight behind a hidden scrollbar, and the Settings
+   dropdown — absolutely positioned inside the nav — was clipped by
+   the overflow, so it could not open at all.
+
+   The real problem was fourteen items, not the container. They are
+   now grouped into eight (see allMenus), which fits, so nothing
+   needs clipping and dropdowns escape normally. */
+.nav-scroll > * { flex: 0 0 auto; }
+.nav-scroll button,
+.nav-scroll a { white-space: nowrap; }
+
+/* Between the xl breakpoint and ~1440px the eight nav items need about
+   150px more than the header can give. Every button carries a text label,
+   so the icon is decoration — dropping it below 1440px buys back 24px per
+   item (icon + gap) and the row fits with labels intact. Clipping the bar,
+   or falling back to the hamburger on a 1280px laptop, would both be worse
+   than losing an icon. */
+@media (min-width: 1280px) and (max-width: 1439.98px) {
+  .nav-scroll .nav-btn app-icon { display: none; }
+  .nav-scroll .nav-btn { padding-left: 10px; padding-right: 10px; }
+}

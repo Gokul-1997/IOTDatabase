@@ -20,7 +20,7 @@
  * agree with each other.
  */
 const db = require('../db');
-const { resolveWindow, scope } = require('./window');
+const { resolveWindow, scope, parseMachineId } = require('./window');
 
 /* Stored as LOW/MEDIUM/HIGH/CRITICAL; the agreement asks for
    Critical / Non-Critical / Information. */
@@ -43,7 +43,7 @@ const FRESH_WINDOW       = `INTERVAL '60 seconds'`;
 
 exports.getMaintenanceDashboard = async (req) => {
   const companyId = req.user.company_id;
-  const machineId = req.query.machine_id ? Number(req.query.machine_id) : null;
+  const machineId = parseMachineId(req.query.machine_id);
   const win       = await resolveWindow(companyId, req.query);
   const s         = scope(companyId, win, machineId);
 

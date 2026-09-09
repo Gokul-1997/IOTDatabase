@@ -4,13 +4,13 @@
   <div class="flex items-center justify-between px-4 xl:px-8 mx-auto h-16">
 
     <!-- LEFT -->
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-4 shrink-0">
       <img src="/images/logo/STM_Mexa_logo.svg" class="w-32 dark:hidden" />
       <img src="/images/logo/STM_Mexa_logo.svg" class="w-32 hidden dark:block" alt="Logo" />
     </div>
 
     <!-- DESKTOP MENU -->
-    <nav class="hidden lg:flex items-center gap-2">
+    <nav class="nav-scroll hidden xl:flex items-center gap-1 min-w-0 flex-1 justify-center">
 
       <ng-container *ngFor="let menu of menus">
 
@@ -20,7 +20,7 @@
           (click)="navigate(menu)"
           class="nav-btn flex items-center gap-1"
           [class.active]="isActive(menu.path)">
-          <app-icon [name]="menu.icon" [size]="24" class="text-white dark:text-white"></app-icon>
+          <app-icon [name]="menu.icon" [size]="20" class="text-white dark:text-white"></app-icon>
           {{ menu.label }}
         </button>
 
@@ -31,7 +31,7 @@
             (click)="toggleMenu(menu.label)"
             class="nav-btn flex items-center gap-1"
             [class.active]="isChildActive(menu.children)">
-            <app-icon name="settings" [size]="24" class="text-white dark:text-white"></app-icon>
+            <app-icon [name]="menu.icon" [size]="20" class="text-white dark:text-white"></app-icon>
             {{ menu.label }}
 
             <svg class="w-3 h-3 transition-transform"
@@ -60,7 +60,7 @@
     </nav>
 
     <!-- RIGHT SECTION -->
-    <div class="flex items-center gap-1">
+    <div class="flex items-center gap-1 shrink-0">
 
       <!-- THEME TOGGLE -->
       <button (click)="toggleTheme()" class="p-2 rounded-full bg-[#2b3990] dark:bg-[#111111]">
@@ -75,7 +75,7 @@
       <!-- <app-notification-bell></app-notification-bell> -->
 
       <!-- USER DROPDOWN -->
-      <div class="user-menu-wrap hidden lg:block relative">
+      <div class="user-menu-wrap hidden xl:block relative">
         <button (click)="toggleUserMenu()"
           class="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition">
           <div class="h-9 w-9 rounded-full bg-[#2b3990] flex items-center justify-center text-white font-semibold text-sm">
@@ -113,7 +113,7 @@
 
       <!-- HAMBURGER  -->
       <button
-        class="lg:hidden p-2"
+        class="xl:hidden p-2"
         (click)="toggleMobileMenu()">
 
         <svg *ngIf="!isMobileMenuOpen"
@@ -141,7 +141,7 @@
 
   <!-- MOBILE MENU -->
   <div *ngIf="isMobileMenuOpen"
-       class="lg:hidden bg-white dark:bg-black border-t border-gray-200 dark:border-gray-800 px-4 py-4 space-y-3">
+       class="xl:hidden bg-white dark:bg-black border-t border-gray-200 dark:border-gray-800 px-4 py-4 space-y-3">
 
     <ng-container *ngFor="let menu of menus">
 

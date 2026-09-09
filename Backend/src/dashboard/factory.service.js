@@ -13,7 +13,7 @@ const db = require('../db');
 // resolveWindow/scope moved to ./window.js when the Maintenance dashboard
 // needed the same filter behaviour — two screens filtered identically must
 // resolve identically, so there is one copy rather than two.
-const { resolveWindow, scope } = require('./window');
+const { resolveWindow, scope, parseMachineId } = require('./window');
 
 /* Alarm severities are stored as LOW/MEDIUM/HIGH/CRITICAL, but the
    agreement asks for Critical / Non-Critical / Information. */
@@ -32,7 +32,7 @@ const SEVERITY_CLASS = `
  */
 exports.getFactoryDashboard = async (req) => {
   const companyId  = req.user.company_id;
-  const machineId  = req.query.machine_id ? Number(req.query.machine_id) : null;
+  const machineId  = parseMachineId(req.query.machine_id);
   const win        = await resolveWindow(companyId, req.query);
 
   const s = scope(companyId, win, machineId);

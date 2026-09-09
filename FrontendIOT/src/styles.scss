@@ -65,10 +65,13 @@ body {
   background: #000;
   padding-top: 15px;
 }
+/* flex-wrap + gap are load-bearing: this bar is on 16 pages and, without
+   wrapping, its title and action buttons pushed past a 390px phone viewport
+   and made every one of those pages scroll sideways. */
 .bg-top-bar{
   @apply bg-gradient-to-r from-[#2B3990] to-[#9B3F70]
-  text-white rounded-xl px-1 md:px-4 py-2 mb-3
-            flex items-center justify-between  shadow-xl
+  text-white rounded-xl px-2 md:px-4 py-2 mb-3
+            flex flex-wrap items-center justify-between gap-2 shadow-xl
 }
 
 .dark .bg-top-bar{
@@ -147,7 +150,10 @@ h4 {
 
 /* MAIN NAV BUTTON */
 .nav-btn {
-  padding:10px 16px;
+  /* 12px, not 16: eight grouped items need 64px less than the header had
+     to give at 1440px, and 8×2×4px of padding is exactly where it comes
+     from without shrinking the text or the touch target height. */
+  padding:10px 12px;
   border-radius: 15px;
   font-size:15px;
   transition: all 0.15s ease;
