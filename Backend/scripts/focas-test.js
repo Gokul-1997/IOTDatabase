@@ -21,6 +21,12 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
+/* Read Backend/.env the same way the API does, so FOCAS_LIB_PATH is
+   configured in one place and this script and the running server cannot
+   disagree about where the library is. An environment variable already
+   set in the shell still wins — dotenv does not overwrite one. */
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 const focas = require('../src/programs/transports/focas');
 const P = require('../src/programs/transports/focas.protocol');
 
