@@ -52,7 +52,13 @@ export class ProgramsComponent implements OnInit, OnDestroy {
   /** transfer_id → { file_name, percent, direction } */
   progress = new Map<number, any>();
   /** set when the controller already holds one of the files */
-  overwritePrompt: { programIds: number[]; machineIds: number[]; names: string[] } | null = null;
+  /* `unverified` distinguishes "the controller told us this file is there"
+     from "the controller cannot answer either probe". Both need the same
+     confirmation, but claiming a file exists when we could not check is a
+     lie the operator would rightly stop trusting. */
+  overwritePrompt: {
+    programIds: number[]; machineIds: number[]; names: string[]; unverified: boolean;
+  } | null = null;
 
   /* ── supervisor authorisation ──
      Sending to a controller needs a one-time code from the supervisor
@@ -267,6 +273,25 @@ export class ProgramsComponent implements OnInit, OnDestroy {
           return;
         }
 
+        // The machine is mid-transfer for someone else. Retrying is the fix,
+        // so say that rather than reporting a failure the operator would
+        // reasonably read as a broken machine.
+        const busy = results.filter((r: any) => r.status === 'BUSY');
+        if (busy.length) {
+          this.closeAuthPrompt();
+          this.toast.error(busy[0].message || 'That machine is busy with another transfer');
+          return;
+        }
+
+        // Missing IP or a program directory that is not on the controller —
+        // an admin fixes this in the machine form; retrying never will.
+        const misconfigured = results.filter((r: any) => r.status === 'NOT_CONFIGURED');
+        if (misconfigured.length) {
+          this.closeAuthPrompt();
+          this.toast.error(misconfigured[0].message || 'This machine’s FTP details are incomplete');
+          return;
+        }
+
         const existing = results.filter((r: any) => r.status === 'EXISTS');
         if (existing.length) {
           // ask once, then resend the whole batch with overwrite — the same
@@ -274,7 +299,8 @@ export class ProgramsComponent implements OnInit, OnDestroy {
           this.authPrompt = null;
           this.overwritePrompt = {
             programIds, machineIds,
-            names: existing.map((r: any) => r.program_name)
+            names: existing.map((r: any) => r.program_name),
+            unverified: existing.every((r: any) => r.code === 'EXISTENCE_UNKNOWN')
           };
           return;
         }

@@ -371,6 +371,136 @@ describe('program.service.testConnection', () => {
     await expect(svc.testConnection({ user, body: { machine_id: 999 } }))
       .rejects.toThrow(/machine not found/i);
   });
+
+  /*
+   * The endpoint takes an address from the request body so the machine
+   * form can be tested before it is saved, which without a guard makes it
+   * a port scanner: any logged-in user can aim the server at a host and
+   * learn from the reply whether the port answered.
+   */
+  describe('will not probe off the shop floor', () => {
+    test.each([
+      ['a public address',        '8.8.8.8'],
+      ['EC2 instance metadata',   '169.254.169.254'],
+      ['loopback',                '127.0.0.1'],
+      ['just outside 172.16/12',  '172.32.0.1']
+    ])('refuses %s', async (_label, ip) => {
+      await expect(svc.testConnection({ user, body: { ip_address: ip } }))
+        .rejects.toMatchObject({ status: 400, code: 'ADDRESS_NOT_PRIVATE' });
+      expect(testMachineConnection).not.toHaveBeenCalled();
+    });
+
+    test('rejects a malformed address before it reaches the FTP client', async () => {
+      await expect(svc.testConnection({ user, body: { ip_address: '10.0.0.999' } }))
+        .rejects.toMatchObject({ status: 400, code: 'BAD_ADDRESS' });
+      expect(testMachineConnection).not.toHaveBeenCalled();
+    });
+
+    test.each([['10.4.1.9'], ['172.16.0.1'], ['172.31.255.254'], ['192.168.1.50']])(
+      'allows %s', async (ip) => {
+        testMachineConnection.mockResolvedValue();
+        await svc.testConnection({ user, body: { ip_address: ip } });
+        expect(testMachineConnection).toHaveBeenCalled();
+      }
+    );
+
+    test('a stored address is trusted — only body values are screened', async () => {
+      // An admin set this through the machine form; re-validating it here
+      // would lock a customer out of their own machine over a policy the
+      // machine form never enforced.
+      mockDb.queueResponse({
+        rows: [{ ip_address: '8.8.8.8', ftp_port: 21, ftp_user: 'cnc', ftp_pass: 'pw' }],
+        rowCount: 1
+      });
+      testMachineConnection.mockResolvedValue();
+
+      await svc.testConnection({ user, body: { machine_id: 20 } });
+
+      expect(testMachineConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ ip_address: '8.8.8.8' })
+      );
+    });
+  });
+});
+
+/*
+ * A CNC's embedded FTP server accepts one control session. Two transfers
+ * overlapping is not an abstract race — it is two operators clicking Send
+ * within a few seconds of each other — and the result on some controllers
+ * is a truncated program file rather than a clean refusal.
+ */
+describe('program.service — one transfer at a time per machine', () => {
+  const programRow = { id: 1, name: 'Flange', file_name: 'O1234.nc', content: Buffer.from('G0') };
+  const machineRow = { id: 20, machine_serial_no: 'VMC-01', ip_address: '192.168.1.101' };
+  const req = { user, params: { id: 1, machineId: 20 }, body: {} };
+
+  test('refuses a second transfer while one is running, without touching FTP', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 }
+    );
+    mockDb.denyAdvisoryLock();
+
+    await expect(svc.transferProgram(req)).rejects.toMatchObject({
+      status: 409,
+      code: 'MACHINE_BUSY'
+    });
+    // the whole point: no second session is opened against the controller
+    expect(sendProgramToMachine).not.toHaveBeenCalled();
+    expect(machineFileExists).not.toHaveBeenCalled();
+  });
+
+  test('takes the lock on the machine id and releases it on success', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 },
+      { rows: [{ id: 99 }], rowCount: 1 },
+      { rows: [], rowCount: 1 }
+    );
+    sendProgramToMachine.mockResolvedValue();
+
+    await svc.transferProgram(req);
+
+    const locks = mockDb.allCalls().filter(c => /advisory/.test(c.text));
+    expect(locks).toHaveLength(2);
+    expect(locks[0].text).toMatch(/pg_try_advisory_lock/);
+    expect(locks[0].params[1]).toBe(20);        // keyed by machine, not program
+    expect(locks[1].text).toMatch(/pg_advisory_unlock/);
+    expect(locks[1].params).toEqual(locks[0].params);
+  });
+
+  test('releases the lock when the transfer fails', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 },
+      { rows: [{ id: 100 }], rowCount: 1 },
+      { rows: [], rowCount: 1 }
+    );
+    sendProgramToMachine.mockRejectedValue(new Error('connect ETIMEDOUT'));
+
+    await expect(svc.transferProgram(req)).rejects.toThrow(/Transfer failed/);
+
+    // a failed transfer that kept the lock would wedge the machine until
+    // the API process restarted
+    expect(mockDb.allCalls().some(c => /pg_advisory_unlock/.test(c.text))).toBe(true);
+  });
+
+  test('an unauthorised caller never takes the lock', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 },
+      { rows: [machineRow], rowCount: 1 }
+    );
+    const denied = Object.assign(new Error('Supervisor code required'), {
+      status: 403, code: 'APPROVAL_REQUIRED'
+    });
+    assertAuthorized.mockRejectedValue(denied);
+
+    await expect(svc.transferProgram(req)).rejects.toMatchObject({ code: 'APPROVAL_REQUIRED' });
+
+    // otherwise a stream of unauthorised attempts would hold the machine
+    // busy against the operators who are allowed to use it
+    expect(mockDb.allCalls().some(c => /advisory/.test(c.text))).toBe(false);
+  });
 });
 
 describe('program.service.cleanupStuckTransfers', () => {

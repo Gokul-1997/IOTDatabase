@@ -374,9 +374,16 @@
 
       <div class="ui-dialog-header">
         <div>
-          <h2 id="overwriteTitle" class="ui-dialog-title">File already on the controller</h2>
+          <h2 id="overwriteTitle" class="ui-dialog-title">
+            {{ overwritePrompt.unverified ? 'Cannot check the controller' : 'File already on the controller' }}
+          </h2>
           <p class="ui-dialog-subtitle">
-            Already present on {{ selectedMachine?.machine_serial_no }}.
+            <ng-container *ngIf="!overwritePrompt.unverified">
+              Already present on {{ selectedMachine?.machine_serial_no }}.
+            </ng-container>
+            <ng-container *ngIf="overwritePrompt.unverified">
+              {{ selectedMachine?.machine_serial_no }} cannot report which files it holds.
+            </ng-container>
           </p>
         </div>
         <button type="button" class="ui-close" (click)="cancelOverwrite()" aria-label="Cancel the transfer">
@@ -390,8 +397,12 @@
         <ul class="text-sm text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#3e3e3e] rounded-lg px-4 py-3 mb-3 max-h-40 overflow-auto">
           <li *ngFor="let n of overwritePrompt.names" class="py-0.5">{{ n }}</li>
         </ul>
-        <p class="ui-alert ui-alert-warn">
+        <p class="ui-alert ui-alert-warn" *ngIf="!overwritePrompt.unverified">
           Overwriting replaces the file on the machine. Make sure the operator is not currently running it.
+        </p>
+        <p class="ui-alert ui-alert-warn" *ngIf="overwritePrompt.unverified">
+          This controller does not support checking whether a file is already there, so we cannot tell you
+          if sending will replace one. Continue only if you know the operator is not running these programs.
         </p>
       </div>
 

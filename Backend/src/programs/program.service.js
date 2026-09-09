@@ -1,11 +1,10 @@
 const pool = require('../db');
-const {
-  sendProgramToMachine,
-  fetchProgramFromMachine,
-  listMachineFiles,
-  machineFileExists,
-  testMachineConnection
-} = require('./program.transfer');
+/*
+ * Transfers go through whichever protocol the machine speaks — FOCAS for
+ * Fanuc, FTP for the rest — resolved per machine rather than imported
+ * directly, so everything below this line is protocol-agnostic.
+ */
+const { transportFor, protocolFor } = require('./transports');
 const { emitToUser } = require('../lib/realtime');
 const { assertAuthorized } = require('./authorization.service');
 
@@ -15,8 +14,11 @@ const { assertAuthorized } = require('./authorization.service');
 
 /** Load a machine the caller is allowed to touch, or throw. */
 async function getMachine(machineId, companyId) {
+  // `controller` is what routes a machine to FOCAS or FTP, so it has to
+  // travel with the row rather than being looked up again later.
   const { rows, rowCount } = await pool.query(
-    `SELECT id, machine_serial_no, ip_address, ftp_port, ftp_user, ftp_pass, ftp_dir
+    `SELECT id, machine_serial_no, ip_address, ftp_port, ftp_user, ftp_pass, ftp_dir,
+            controller
      FROM machines
      WHERE id = $1 AND company_id = $2 AND is_active = true`,
     [machineId, companyId]
@@ -31,6 +33,101 @@ function fileExistsError(fileName) {
   e.status = 409;
   e.code = 'FILE_EXISTS';
   return e;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   One transfer at a time, per machine
+
+   A CNC's embedded FTP server is not a general-purpose one: most
+   accept a single control session, and a second connection either is
+   refused or — worse on some Mitsubishi models — interleaves with the
+   first and leaves a truncated file on the controller. Two operators
+   sending to the same machine at the same moment is not a rare case;
+   it is a Monday morning.
+
+   The lock is a Postgres advisory lock rather than an in-process mutex
+   because pm2 runs the API as multiple instances, and a JavaScript Map
+   in one worker cannot see a transfer running in another. It is taken
+   on its own pooled connection and released in a finally; if the
+   process dies mid-transfer the session ends and Postgres drops the
+   lock on its own, so a crash cannot wedge a machine permanently.
+   ───────────────────────────────────────────────────────────── */
+
+const TRANSFER_LOCK_NAMESPACE = 0x5052;   // 'PR' — program transfer
+
+function machineBusyError(machine) {
+  const e = new Error(
+    `Another transfer to ${machine.machine_serial_no} is already running. ` +
+    `Wait for it to finish and try again.`
+  );
+  e.status = 409;
+  e.code = 'MACHINE_BUSY';
+  return e;
+}
+
+async function withMachineLock(machine, fn) {
+  const client = await pool.connect();
+  try {
+    const { rows: [{ locked }] } = await client.query(
+      'SELECT pg_try_advisory_lock($1, $2) AS locked',
+      [TRANSFER_LOCK_NAMESPACE, machine.id]
+    );
+    if (!locked) throw machineBusyError(machine);
+
+    try {
+      return await fn();
+    } finally {
+      await client.query(
+        'SELECT pg_advisory_unlock($1, $2)',
+        [TRANSFER_LOCK_NAMESPACE, machine.id]
+      );
+    }
+  } finally {
+    client.release();
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Where the connection test may point
+
+   testConnection accepts an address in the request body so the machine
+   form can be tried before it is saved. That makes it, unguarded, a
+   port scanner any logged-in user can drive: the server connects
+   wherever it is told and reports back whether the port answered.
+   On EC2 that includes 169.254.169.254, the instance metadata service.
+
+   CNC controllers live on private shop-floor networks, so restricting
+   the probe to RFC 1918 space costs nothing real and closes the hole.
+   Only body-supplied addresses are checked — an address already stored
+   on a machine row was set by an admin and is left alone.
+   ───────────────────────────────────────────────────────────── */
+
+function assertPrivateAddress(ip) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(ip).trim());
+  const octets = m && m.slice(1).map(Number);
+
+  if (!octets || octets.some(n => n > 255)) {
+    const e = new Error(`"${ip}" is not a valid IPv4 address.`);
+    e.status = 400;
+    e.code = 'BAD_ADDRESS';
+    return Promise.reject(e);
+  }
+
+  const [a, b] = octets;
+  const isPrivate = a === 10
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168);
+
+  if (!isPrivate) {
+    const e = new Error(
+      `${ip} is not on a private network. CNC controllers must be reachable ` +
+      `at a 10.x, 172.16–31.x or 192.168.x address.`
+    );
+    e.status = 400;
+    e.code = 'ADDRESS_NOT_PRIVATE';
+    return Promise.reject(e);
+  }
+  return Promise.resolve();
 }
 
 /**
@@ -52,6 +149,11 @@ function authFromRequest(req) {
  */
 const BATCH_ROW_STATUS = {
   FILE_EXISTS:            'EXISTS',
+  EXISTENCE_UNKNOWN:      'EXISTS',        // same fix: confirm the overwrite
+  MACHINE_BUSY:           'BUSY',
+  NOT_CONFIGURED:         'NOT_CONFIGURED',
+  BAD_DIRECTORY:          'NOT_CONFIGURED',
+  EMPTY_PROGRAM:          'FAILED',
   APPROVAL_REQUIRED:      'APPROVAL_REQUIRED',
   NO_SUPERVISOR_ASSIGNED: 'NO_SUPERVISOR',
   INVALID_CODE:           'APPROVAL_REQUIRED',
@@ -195,7 +297,7 @@ exports.deleteProgram = async (req) => {
 /* BROWSE FILES ON THE CNC */
 exports.listMachinePrograms = async (req) => {
   const machine = await getMachine(req.params.machineId, req.user.company_id);
-  const files = await listMachineFiles(machine);
+  const files = await transportFor(machine).listMachineFiles(machine);
 
   const { search = '' } = req.query;
   const term = String(search).trim().toLowerCase();
@@ -207,11 +309,15 @@ exports.listMachinePrograms = async (req) => {
 /* CONNECTION STATUS — one machine, for the live indicator */
 exports.getMachineStatus = async (req) => {
   const machine = await getMachine(req.params.machineId, req.user.company_id);
+  // Report the protocol alongside the status: "offline" means something
+  // different for FOCAS (port 8193, licensed option) than for FTP, and
+  // whoever is diagnosing it needs to know which one was tried.
+  const protocol = protocolFor(machine);
   try {
-    await testMachineConnection(machine);
-    return { machine_id: machine.id, online: true };
+    await transportFor(machine).testMachineConnection(machine);
+    return { machine_id: machine.id, online: true, protocol };
   } catch (err) {
-    return { machine_id: machine.id, online: false, reason: err.message };
+    return { machine_id: machine.id, online: false, protocol, reason: err.message };
   }
 };
 
@@ -225,10 +331,9 @@ exports.getMachineStatus = async (req) => {
  * identically.
  */
 async function uploadOne({ program, machine, user, overwrite, auth, verified }) {
-  const companyId = user.company_id;
-
-  // Supervisor sign-off comes first — before the FTP probe below, so an
-  // unauthorised caller never opens a session against the controller.
+  // Supervisor sign-off comes first — before the machine lock and the FTP
+  // probe, so an unauthorised caller never opens a session against the
+  // controller and never blocks a legitimate transfer by holding the lock.
   // The guard lives here rather than in route middleware because both
   // the single and batch endpoints funnel through this function, so
   // there is no path to a machine that can skip it.
@@ -240,7 +345,16 @@ async function uploadOne({ program, machine, user, overwrite, auth, verified }) 
   // outright. Absent it, this verifies for itself.
   const authorization = verified || await assertAuthorized(machine, user, auth);
 
-  if (!overwrite && await machineFileExists(machine, program.file_name)) {
+  return withMachineLock(machine, () =>
+    uploadOneLocked({ program, machine, user, overwrite, authorization })
+  );
+}
+
+/** The transfer itself. Only ever called holding the machine's lock. */
+async function uploadOneLocked({ program, machine, user, overwrite, authorization }) {
+  const companyId = user.company_id;
+
+  if (!overwrite && await transportFor(machine).machineFileExists(machine, program.file_name)) {
     throw fileExistsError(program.file_name);
   }
 
@@ -258,7 +372,7 @@ async function uploadOne({ program, machine, user, overwrite, auth, verified }) 
   );
 
   try {
-    await sendProgramToMachine(
+    await transportFor(machine).sendProgramToMachine(
       machine, program.content, program.file_name,
       progressEmitter(user.id, transferId, program.file_name, 'UPLOAD')
     );
@@ -283,8 +397,11 @@ async function uploadOne({ program, machine, user, overwrite, auth, verified }) 
       programName: program.name, machineSerial: machine.machine_serial_no, reason: err.message
     });
 
+    // Keep the original code so a batch row can say "fix the config" or
+    // "confirm the overwrite" rather than a flat FAILED.
     const e = new Error(`Transfer failed: ${err.message}`);
-    e.status = 502;
+    e.status = err.status || 502;
+    e.code = err.code;
     throw e;
   }
 }
@@ -395,19 +512,27 @@ exports.fetchFromMachine = async (req) => {
   const companyId = req.user.company_id;
   const machine = await getMachine(machineId, companyId);
 
+  // Same single-session constraint as an upload — a fetch running while
+  // a send is in flight would be a second control connection.
+  return withMachineLock(machine, () => fetchLocked(machine, file_name, req.user));
+};
+
+async function fetchLocked(machine, file_name, user) {
+  const companyId = user.company_id;
+
   const { rows: [{ id: transferId }] } = await pool.query(
     `INSERT INTO program_transfers
        (company_id, machine_id, program_name, file_name, machine_serial,
         direction, status, transferred_by)
      VALUES ($1,$2,$3,$4,$5,'DOWNLOAD','PENDING',$6)
      RETURNING id`,
-    [companyId, machine.id, file_name, file_name, machine.machine_serial_no, req.user.id]
+    [companyId, machine.id, file_name, file_name, machine.machine_serial_no, user.id]
   );
 
   try {
-    const content = await fetchProgramFromMachine(
+    const content = await transportFor(machine).fetchProgramFromMachine(
       machine, file_name,
-      progressEmitter(req.user.id, transferId, file_name, 'DOWNLOAD')
+      progressEmitter(user.id, transferId, file_name, 'DOWNLOAD')
     );
 
     const { rows: [program] } = await pool.query(
@@ -416,7 +541,7 @@ exports.fetchFromMachine = async (req) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,'CNC')
        RETURNING id, name, file_name, file_size, created_at`,
       [companyId, file_name, file_name, content, content.length,
-       `Retrieved from ${machine.machine_serial_no}`, req.user.id]
+       `Retrieved from ${machine.machine_serial_no}`, user.id]
     );
 
     await pool.query(
@@ -426,7 +551,7 @@ exports.fetchFromMachine = async (req) => {
       [transferId, program.id, content.length]
     );
     await notifyTransfer({
-      companyId, userId: req.user.id, ok: true, direction: 'DOWNLOAD',
+      companyId, userId: user.id, ok: true, direction: 'DOWNLOAD',
       programName: file_name, machineSerial: machine.machine_serial_no
     });
 
@@ -437,15 +562,18 @@ exports.fetchFromMachine = async (req) => {
       [transferId, err.message]
     );
     await notifyTransfer({
-      companyId, userId: req.user.id, ok: false, direction: 'DOWNLOAD',
+      companyId, userId: user.id, ok: false, direction: 'DOWNLOAD',
       programName: file_name, machineSerial: machine.machine_serial_no, reason: err.message
     });
 
+    // Preserve the original code (BAD_DIRECTORY, NOT_CONFIGURED, …) so the
+    // UI can tell a misconfiguration from an unreachable machine.
     const e = new Error(`Download failed: ${err.message}`);
-    e.status = 502;
+    e.status = err.status || 502;
+    e.code = err.code;
     throw e;
   }
-};
+}
 
 /* TRANSFER HISTORY */
 exports.getTransfers = async (req) => {
@@ -495,6 +623,10 @@ exports.getTransfers = async (req) => {
 exports.testConnection = async (req) => {
   const { machine_id, ip_address, ftp_port, ftp_user, ftp_pass } = req.body || {};
 
+  // Only an address typed into this request is checked; a stored one was
+  // set by an admin through the machine form and is trusted as-is.
+  if (ip_address) await assertPrivateAddress(ip_address);
+
   let config = { ip_address, ftp_port, ftp_user, ftp_pass };
 
   if (machine_id) {
@@ -514,7 +646,7 @@ exports.testConnection = async (req) => {
     };
   }
 
-  await testMachineConnection(config);
+  await transportFor(config).testMachineConnection(config);
 };
 
 /* MARK STUCK 'PENDING' TRANSFERS AS FAILED
