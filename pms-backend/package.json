@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node app.js",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
+    "test": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "NODE_ENV=test node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
