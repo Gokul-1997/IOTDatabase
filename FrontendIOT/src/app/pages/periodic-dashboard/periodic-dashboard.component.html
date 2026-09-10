@@ -1,0 +1,361 @@
+<div class="p-4 sm:p-6 space-y-5 min-w-0">
+
+  <!-- ══════════ HEADER ══════════ -->
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Periodic Maintenance</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Time-based work — due because the date arrived, not because something went wrong.
+        <span *ngIf="updatedAt" class="ml-1">Updated {{ updatedAt }}.</span>
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="showPlan = !showPlan"
+              [attr.aria-expanded]="showPlan">
+        <mat-icon class="!w-4 !h-4 !text-base" aria-hidden="true">event_repeat</mat-icon>
+        {{ showPlan ? 'Hide plan' : 'Maintenance plan' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-primary" (click)="runEngine()" [disabled]="running">
+        <span *ngIf="running" class="ui-spinner" aria-hidden="true"></span>
+        {{ running ? 'Checking…' : 'Check due now' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════ FILTERS ══════════ -->
+  <form class="ui-viewbar flex flex-wrap items-end gap-3" (ngSubmit)="submit()">
+    <div class="min-w-0">
+      <label for="pmMachine" class="ui-label">Machine</label>
+      <select id="pmMachine" class="filter-select" [(ngModel)]="selectedMachine" name="machine"
+              (ngModelChange)="submit(); loadSchedules()">
+        <option [ngValue]="null">All machines</option>
+        <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+      </select>
+    </div>
+
+    <div class="min-w-0">
+      <label for="pmStatus" class="ui-label">Status</label>
+      <select id="pmStatus" class="filter-select" [(ngModel)]="statusFilter" name="status" (ngModelChange)="submit()">
+        <option value="">Any status</option>
+        <option *ngFor="let s of STATUSES" [value]="s">{{ s.replace('_', ' ') }}</option>
+      </select>
+    </div>
+
+    <div class="flex-1 min-w-[12rem]">
+      <label for="pmSearch" class="ui-label">Search</label>
+      <input id="pmSearch" type="search" class="ui-input" placeholder="Task or machine"
+             [(ngModel)]="search" name="search" (ngModelChange)="onSearchInput()">
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="reset()">Reset</button>
+    </div>
+
+    <!-- Export sits with the filters because it exports exactly what they select. -->
+    <div class="flex items-center gap-1" role="group" aria-label="Export the filtered list">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('xlsx')" [disabled]="exporting">
+        {{ exporting === 'xlsx' ? '…' : 'Excel' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('csv')" [disabled]="exporting">
+        {{ exporting === 'csv' ? '…' : 'CSV' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('pdf')" [disabled]="exporting">
+        {{ exporting === 'pdf' ? '…' : 'PDF' }}
+      </button>
+    </div>
+  </form>
+
+  <!-- ══════════ STATES ══════════ -->
+  <p *ngIf="errorMsg" class="ui-alert ui-alert-error" role="alert">{{ errorMsg }}</p>
+
+  <div *ngIf="loading && !data" class="ui-alert" aria-live="polite">Loading…</div>
+
+  <div *ngIf="isUnconfigured" class="ui-alert ui-alert-info">
+    <strong>No maintenance plan yet.</strong>
+    Add a schedule — a machine, a task and how often it repeats — and tickets will be raised
+    automatically as each one falls due.
+    <button type="button" class="underline font-medium ml-1" (click)="showPlan = true">Add the first schedule</button>
+  </div>
+
+  <ng-container *ngIf="data">
+
+    <!-- ══════════ KPIs ══════════ -->
+    <div class="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Scheduled</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.scheduled }}</p>
+        <p class="ui-hint">Occurrences raised</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Due today</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.due_today }}</p>
+        <p class="ui-hint">Still open</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Due this week</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.due_this_week }}</p>
+        <p class="ui-hint">Next 7 days</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Overdue</p>
+        <p class="text-3xl font-bold mt-1"
+           [class]="data.kpis.overdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'">
+          {{ data.kpis.overdue }}
+        </p>
+        <p class="ui-hint">Past the grace period</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Completed</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.completed }}</p>
+        <p class="ui-hint">All time</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Compliance</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ complianceLabel }}</p>
+        <!-- The basis is shown because "80%" means nothing without it:
+             4 of 5 and 400 of 500 are very different confidence. -->
+        <p class="ui-hint">
+          <ng-container *ngIf="data.kpis.compliance_basis.judged > 0">
+            {{ data.kpis.compliance_basis.on_time }} of
+            {{ data.kpis.compliance_basis.judged }} on time
+          </ng-container>
+          <ng-container *ngIf="data.kpis.compliance_basis.judged === 0">
+            Nothing due yet
+          </ng-container>
+        </p>
+      </div>
+    </div>
+
+    <!-- ══════════ TREND + FREQUENCY ══════════ -->
+    <div class="grid gap-4 lg:grid-cols-3">
+      <section class="ui-tabpanel lg:col-span-2 min-w-0">
+        <h2 class="ui-section-title">Compliance, last 12 weeks</h2>
+        <apx-chart *ngIf="trendSeries.length"
+          [series]="trendSeries" [chart]="trendChart.chart" [stroke]="trendChart.stroke"
+          [colors]="trendChart.colors" [markers]="trendChart.markers"
+          [dataLabels]="trendChart.dataLabels" [xaxis]="trendChart.xaxis"
+          [yaxis]="trendChart.yaxis" [grid]="trendChart.grid"
+          [tooltip]="trendChart.tooltip" [noData]="trendChart.noData"></apx-chart>
+      </section>
+
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">By frequency</h2>
+        <p *ngIf="!data.by_frequency.length" class="text-sm text-gray-400">Nothing scheduled yet.</p>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+          <li *ngFor="let f of data.by_frequency" class="py-2 flex items-center justify-between gap-3">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-200">
+              {{ frequencyLabel(f.frequency) }}
+            </span>
+            <span class="flex items-center gap-2 text-xs">
+              <span class="px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">
+                {{ f.open }} open
+              </span>
+              <span *ngIf="f.overdue > 0"
+                    class="px-2 py-0.5 rounded-md bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                {{ f.overdue }} overdue
+              </span>
+            </span>
+          </li>
+        </ul>
+      </section>
+    </div>
+
+    <!-- ══════════ UPCOMING + WORKLOAD ══════════ -->
+    <div class="grid gap-4 lg:grid-cols-2">
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Next due</h2>
+        <p *ngIf="!data.upcoming.length" class="text-sm text-gray-400">Nothing outstanding.</p>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+          <li *ngFor="let u of data.upcoming" class="py-2 flex items-start justify-between gap-3">
+            <span class="min-w-0">
+              <span class="block text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{{ u.title }}</span>
+              <span class="block text-xs text-gray-500">
+                {{ u.machine_serial_no }} · {{ frequencyLabel(u.frequency) }}
+                <span *ngIf="u.assigned_to_name"> · {{ u.assigned_to_name }}</span>
+              </span>
+            </span>
+            <span class="text-xs whitespace-nowrap px-2 py-0.5 rounded-md"
+                  [class]="u.is_overdue
+                    ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+                    : 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'">
+              {{ dueLabel(u.due_date, u.is_overdue) }}
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Technician workload</h2>
+        <p *ngIf="!data.technician_workload.length" class="text-sm text-gray-400">Nothing assigned.</p>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+          <li *ngFor="let t of data.technician_workload" class="py-2 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700 dark:text-gray-200 truncate">{{ t.technician }}</span>
+            <span class="flex items-center gap-2 text-xs whitespace-nowrap">
+              <span class="text-gray-500">{{ t.open }} open</span>
+              <span *ngIf="t.overdue > 0"
+                    class="px-2 py-0.5 rounded-md bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                {{ t.overdue }} overdue
+              </span>
+            </span>
+          </li>
+        </ul>
+      </section>
+    </div>
+
+    <!-- ══════════ TICKETS ══════════ -->
+    <section class="ui-tabpanel min-w-0">
+      <h2 class="ui-section-title">Maintenance tickets</h2>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <caption class="sr-only">Periodic maintenance tickets, most recently due first</caption>
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+              <th scope="col" class="px-3 py-2 font-semibold">Task</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Machine</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Frequency</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Priority</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Status</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Due</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Technician</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+            <tr *ngFor="let t of data.tickets.data">
+              <td class="px-3 py-2 text-gray-800 dark:text-gray-100">{{ t.title }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ t.machine_serial_no }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ frequencyLabel(t.frequency) }}</td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-0.5 rounded-md text-xs font-medium" [class]="priorityClass(t.priority)">
+                  {{ t.priority }}
+                </span>
+              </td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-0.5 rounded-md text-xs font-medium" [class]="statusClass(t.status)">
+                  {{ t.status.replace('_', ' ') }}
+                </span>
+              </td>
+              <td class="px-3 py-2 whitespace-nowrap">
+                <span class="text-gray-600 dark:text-gray-300">{{ t.due_date | date:'dd MMM yy' }}</span>
+                <!-- overdue is stated in words, never colour alone -->
+                <span *ngIf="t.is_overdue" class="ml-1 text-xs font-medium text-red-700 dark:text-red-300">
+                  overdue
+                </span>
+              </td>
+              <td class="px-3 py-2 text-gray-500">{{ t.assigned_to_name || 'Unassigned' }}</td>
+            </tr>
+            <tr *ngIf="!data.tickets.data.length">
+              <td colspan="7" class="px-3 py-10 text-center text-gray-400">
+                No tickets match these filters.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 pt-3" *ngIf="data.tickets.total > 0">
+        <p class="text-xs text-gray-500" aria-live="polite">
+          Page {{ data.tickets.page }} of {{ data.tickets.totalPages }} · {{ data.tickets.total }} ticket(s)
+        </p>
+        <div class="flex items-center gap-2">
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(-1)"
+                  [disabled]="data.tickets.page <= 1">Previous</button>
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(1)"
+                  [disabled]="data.tickets.page >= data.tickets.totalPages">Next</button>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+
+  <!-- ══════════ THE PLAN ══════════ -->
+  <section class="ui-tabpanel min-w-0" *ngIf="showPlan">
+    <h2 class="ui-section-title">Maintenance plan</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      Each schedule raises a ticket every time it falls due. Grace days are how long after the
+      due date the work still counts as on time.
+    </p>
+
+    <form class="grid gap-3 sm:grid-cols-2 lg:grid-cols-6 items-end mb-5" (ngSubmit)="saveSchedule()">
+      <div class="lg:col-span-1">
+        <label for="schMachine" class="ui-label">Machine</label>
+        <select id="schMachine" class="filter-select w-full" [(ngModel)]="scheduleForm.machine_id" name="schMachine" required>
+          <option [ngValue]="null">Choose…</option>
+          <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+        </select>
+      </div>
+
+      <div class="lg:col-span-2">
+        <label for="schTitle" class="ui-label">Task</label>
+        <input id="schTitle" type="text" class="ui-input" placeholder="e.g. Grease the ways"
+               [(ngModel)]="scheduleForm.title" name="schTitle" required>
+      </div>
+
+      <div>
+        <label for="schFreq" class="ui-label">Every</label>
+        <select id="schFreq" class="filter-select w-full" [(ngModel)]="scheduleForm.frequency" name="schFreq">
+          <option *ngFor="let f of FREQUENCIES" [value]="f">{{ frequencyLabel(f) }}</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="schDue" class="ui-label">First due</label>
+        <input id="schDue" type="date" class="ui-input" [(ngModel)]="scheduleForm.next_due_at" name="schDue" required>
+      </div>
+
+      <div>
+        <label for="schGrace" class="ui-label">Grace (days)</label>
+        <input id="schGrace" type="number" min="0" max="365" class="ui-input"
+               [(ngModel)]="scheduleForm.grace_days" name="schGrace">
+      </div>
+
+      <div class="sm:col-span-2 lg:col-span-6 flex items-center gap-2">
+        <button type="submit" class="ui-btn ui-btn-primary" [disabled]="savingSchedule">
+          <span *ngIf="savingSchedule" class="ui-spinner" aria-hidden="true"></span>
+          {{ scheduleForm.id ? 'Update schedule' : 'Add schedule' }}
+        </button>
+        <button type="button" class="ui-btn ui-btn-ghost" *ngIf="scheduleForm.id"
+                (click)="scheduleForm = blankSchedule()">Cancel</button>
+      </div>
+    </form>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <caption class="sr-only">Recurring maintenance schedules</caption>
+        <thead>
+          <tr class="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+            <th scope="col" class="px-3 py-2 font-semibold">Task</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Machine</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Every</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Next due</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Grace</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Technician</th>
+            <th scope="col" class="px-3 py-2 font-semibold"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+          <tr *ngFor="let s of schedules" [class.opacity-50]="!s.is_active">
+            <td class="px-3 py-2 text-gray-800 dark:text-gray-100">
+              {{ s.title }}
+              <span *ngIf="!s.is_active" class="ml-1 text-xs text-gray-400">(stopped)</span>
+            </td>
+            <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ s.machine_serial_no }}</td>
+            <td class="px-3 py-2 text-gray-500">{{ frequencyLabel(s.frequency) }}</td>
+            <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ s.next_due_at | date:'dd MMM yy' }}</td>
+            <td class="px-3 py-2 text-gray-500">{{ s.grace_days }}d</td>
+            <td class="px-3 py-2 text-gray-500">{{ s.assigned_to_name || 'Unassigned' }}</td>
+            <td class="px-3 py-2 text-right whitespace-nowrap">
+              <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm"
+                      (click)="editSchedule(s)">Edit</button>
+              <button type="button" class="ui-btn ui-btn-ghost ui-btn-sm text-red-600"
+                      *ngIf="s.is_active" (click)="deleteSchedule(s)">Stop</button>
+            </td>
+          </tr>
+          <tr *ngIf="!schedules.length">
+            <td colspan="7" class="px-3 py-10 text-center text-gray-400">No schedules yet.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

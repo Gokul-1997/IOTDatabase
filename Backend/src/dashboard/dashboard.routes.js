@@ -21,6 +21,17 @@ router.post('/preventive/thresholds',       auth, permit('page:maintenance:edit'
 router.delete('/preventive/thresholds/:id', auth, permit('page:maintenance:delete'), ctrl.deleteThreshold);
 router.post('/preventive/run',              auth, permit('page:maintenance:edit'), ctrl.runPmEngine);
 
+/* Phase 2 · Screen 4 — Periodic Maintenance.
+   Literal segments before /:format so "schedules" is never read as one. */
+router.get('/periodic', auth, ctrl.periodic);
+
+router.get('/periodic/schedules',        auth, ctrl.listPeriodicSchedules);
+router.post('/periodic/schedules',       auth, permit('page:maintenance:edit'),   ctrl.savePeriodicSchedule);
+router.delete('/periodic/schedules/:id', auth, permit('page:maintenance:delete'), ctrl.deletePeriodicSchedule);
+router.post('/periodic/run',             auth, permit('page:maintenance:edit'),   ctrl.runPeriodicEngine);
+
+router.get('/periodic/export/:format', auth, ctrl.exportPeriodic);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 
