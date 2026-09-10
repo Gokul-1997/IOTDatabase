@@ -1,0 +1,237 @@
+<div class="p-4 sm:p-6 space-y-5 min-w-0">
+
+  <!-- ══════════ HEADER ══════════ -->
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Alarms</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Faults reported by the machines, with how long each one lasted.
+        <span *ngIf="updatedAt" class="ml-1">Updated {{ updatedAt }}.</span>
+      </p>
+    </div>
+    <div class="flex items-center gap-1" role="group" aria-label="Export the filtered list">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('xlsx')" [disabled]="exporting">
+        {{ exporting === 'xlsx' ? '…' : 'Excel' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('csv')" [disabled]="exporting">
+        {{ exporting === 'csv' ? '…' : 'CSV' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('pdf')" [disabled]="exporting">
+        {{ exporting === 'pdf' ? '…' : 'PDF' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════ FILTERS ══════════ -->
+  <form class="ui-viewbar grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 items-end"
+        (ngSubmit)="submit()">
+    <div>
+      <label for="alFrom" class="ui-label">From</label>
+      <input id="alFrom" type="date" class="ui-input" [(ngModel)]="f.from" name="from" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="alTo" class="ui-label">To</label>
+      <input id="alTo" type="date" class="ui-input" [(ngModel)]="f.to" name="to" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="alMachine" class="ui-label">Machine</label>
+      <select id="alMachine" class="filter-select w-full" [(ngModel)]="f.machine_id" name="machine" (ngModelChange)="submit()">
+        <option [ngValue]="null">All machines</option>
+        <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="alShift" class="ui-label">Shift</label>
+      <select id="alShift" class="filter-select w-full" [(ngModel)]="f.shift_id" name="shift" (ngModelChange)="submit()">
+        <option [ngValue]="null">All shifts</option>
+        <option *ngFor="let s of shifts" [ngValue]="s.id">{{ s.name }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="alSeverity" class="ui-label">Severity</label>
+      <select id="alSeverity" class="filter-select w-full" [(ngModel)]="f.severity" name="severity" (ngModelChange)="submit()">
+        <option value="">Any</option>
+        <option value="CRITICAL">Critical</option>
+        <option value="NORMAL">Normal</option>
+      </select>
+    </div>
+    <div>
+      <label for="alType" class="ui-label">Alarm name</label>
+      <select id="alType" class="filter-select w-full" [(ngModel)]="f.alarm_type" name="alarmType" (ngModelChange)="submit()">
+        <option value="">Any</option>
+        <option *ngFor="let t of data?.facets?.types || []" [value]="t">{{ t }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="alSearch" class="ui-label">Search</label>
+      <input id="alSearch" type="search" class="ui-input" placeholder="Code, name or machine"
+             [(ngModel)]="f.search" name="search" (ngModelChange)="onSearchInput()">
+    </div>
+    <div class="sm:col-span-2 lg:col-span-4 xl:col-span-7">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="reset()">Reset filters</button>
+    </div>
+  </form>
+
+  <!-- ══════════ STATES ══════════ -->
+  <p *ngIf="errorMsg" class="ui-alert ui-alert-error" role="alert">{{ errorMsg }}</p>
+  <div *ngIf="loading && !data" class="ui-alert" aria-live="polite">Loading…</div>
+
+  <div *ngIf="isUnconfigured" class="ui-alert ui-alert-warn">
+    <strong>No alarms have ever been recorded.</strong>
+    The machines are not reporting alarm states over MQTT yet, so this screen — and the
+    preventive-maintenance rules that depend on alarms — will stay empty until they do.
+  </div>
+
+  <ng-container *ngIf="data">
+
+    <!-- ══════════ KPIs ══════════ -->
+    <div class="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Total alarms</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.total }}</p>
+        <p class="ui-hint">In this period</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Critical</p>
+        <p class="text-3xl font-bold mt-1"
+           [class]="data.kpis.critical > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'">
+          {{ data.kpis.critical }}
+        </p>
+        <p class="ui-hint">Highest severity</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Normal</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.normal }}</p>
+        <p class="ui-hint">Everything else</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Still open</p>
+        <p class="text-3xl font-bold mt-1"
+           [class]="data.kpis.open > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'">
+          {{ data.kpis.open }}
+        </p>
+        <p class="ui-hint">Not yet cleared</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Longest alarm</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">
+          {{ duration(data.kpis.max_duration_seconds) }}
+        </p>
+        <!-- an open alarm is measured to now, so the worst outage is visible
+             before anyone closes it -->
+        <p class="ui-hint">Average {{ duration(data.kpis.avg_duration_seconds) }}</p>
+      </div>
+    </div>
+
+    <!-- ══════════ CHARTS ══════════ -->
+    <div class="grid gap-4 lg:grid-cols-2">
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Alarms per day</h2>
+        <apx-chart *ngIf="trendSeries.length"
+          [series]="trendSeries" [chart]="trendChart.chart" [plotOptions]="trendChart.plotOptions"
+          [colors]="trendChart.colors" [dataLabels]="trendChart.dataLabels"
+          [legend]="trendChart.legend" [xaxis]="trendChart.xaxis" [yaxis]="trendChart.yaxis"
+          [grid]="trendChart.grid" [tooltip]="trendChart.tooltip" [noData]="trendChart.noData"></apx-chart>
+      </section>
+
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Alarms by machine</h2>
+        <apx-chart *ngIf="machineSeries.length"
+          [series]="machineSeries" [chart]="machineChart.chart" [plotOptions]="machineChart.plotOptions"
+          [colors]="machineChart.colors" [dataLabels]="machineChart.dataLabels"
+          [xaxis]="machineChart.xaxis" [grid]="machineChart.grid"
+          [tooltip]="machineChart.tooltip" [noData]="machineChart.noData"></apx-chart>
+      </section>
+    </div>
+
+    <!-- ══════════ BY SHIFT ══════════ -->
+    <section class="ui-tabpanel min-w-0">
+      <h2 class="ui-section-title">By shift</h2>
+      <p *ngIf="!data.by_shift.length" class="text-sm text-gray-400">No alarms in this period.</p>
+      <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+        <li *ngFor="let s of data.by_shift" class="py-2 flex items-center justify-between gap-3">
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ s.shift_name }}</span>
+          <span class="flex items-center gap-2 text-xs">
+            <span class="text-gray-500">{{ s.total }} total</span>
+            <span *ngIf="s.critical > 0"
+                  class="px-2 py-0.5 rounded-md bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+              {{ s.critical }} critical
+            </span>
+          </span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- ══════════ ALARM TABLE ══════════ -->
+    <section class="ui-tabpanel min-w-0">
+      <h2 class="ui-section-title">Alarm details</h2>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <caption class="sr-only">Alarm records, most recent first</caption>
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+              <th scope="col" class="px-3 py-2 font-semibold">Machine</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Shift</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Code</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Alarm</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Severity</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Generated</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Closed</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Duration</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+            <tr *ngFor="let a of data.alarms.data">
+              <td class="px-3 py-2 text-gray-800 dark:text-gray-100">{{ a.machine_serial_no }}</td>
+              <td class="px-3 py-2 text-gray-500">{{ a.shift_name }}</td>
+              <td class="px-3 py-2 text-gray-500 font-mono text-xs">{{ a.alarm_code || '--' }}</td>
+              <td class="px-3 py-2 text-gray-700 dark:text-gray-200">{{ a.alarm_type }}</td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-0.5 rounded-md text-xs font-medium" [class]="severityClass(a.severity)">
+                  {{ isCritical(a.severity) ? 'Critical' : 'Normal' }}
+                </span>
+              </td>
+              <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ a.started_at | date:'dd MMM HH:mm' }}</td>
+              <td class="px-3 py-2 text-gray-500 whitespace-nowrap">
+                {{ a.ended_at ? (a.ended_at | date:'dd MMM HH:mm') : '--' }}
+              </td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                {{ duration(a.duration_seconds) }}
+                <!-- an open alarm is still counting, and saying so stops the
+                     number reading as a final figure -->
+                <span *ngIf="a.is_open" class="text-xs text-gray-400">so far</span>
+              </td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-0.5 rounded-md text-xs font-medium"
+                      [class]="a.is_open
+                        ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'">
+                  {{ a.is_open ? 'Open' : 'Closed' }}
+                </span>
+              </td>
+            </tr>
+            <tr *ngIf="!data.alarms.data.length">
+              <td colspan="9" class="px-3 py-10 text-center text-gray-400">
+                No alarms match these filters.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 pt-3" *ngIf="data.alarms.total > 0">
+        <p class="text-xs text-gray-500" aria-live="polite">
+          Page {{ data.alarms.page }} of {{ data.alarms.totalPages }} · {{ data.alarms.total }} alarm(s)
+        </p>
+        <div class="flex items-center gap-2">
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(-1)"
+                  [disabled]="data.alarms.page <= 1">Previous</button>
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(1)"
+                  [disabled]="data.alarms.page >= data.alarms.totalPages">Next</button>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+</div>

@@ -32,6 +32,10 @@ router.post('/periodic/run',             auth, permit('page:maintenance:edit'), 
 
 router.get('/periodic/export/:format', auth, ctrl.exportPeriodic);
 
+/* Phase 2 · Screen 5 — Alarm Dashboard & Reports. */
+router.get('/alarms', auth, ctrl.alarms);
+router.get('/alarms/export/:format', auth, ctrl.exportAlarms);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 

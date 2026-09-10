@@ -5,6 +5,7 @@ import { addToBuffer } from './buffer.js';
 import { setMqttConnected, markMessage, markError } from './health.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
+import { trackAlarm } from './src/lib/alarm-log.js';
 
 const machineCache   = new Map();
 const negativeCache  = new Map(); // api_keys that don't exist → avoid DB hammering
@@ -376,6 +377,22 @@ async function handleMessage(apiKey, payload) {
   if (energyBase === null && energy !== null) {
     await redis.set(energyBaseKey, String(energy));
   }
+
+  /* Record alarm periods. Fire-and-forget for the same reason the hourly
+     rollup is: telemetry ingestion is the product, and a derived record
+     must never be able to slow it down or drop a message. Only state
+     transitions are written, so a machine alarming for an hour costs two
+     queries rather than one per second. */
+  trackAlarm({
+    prev,
+    isAlarm:   normalized.alarm,
+    companyId: machine.company_id,
+    machineId: machine.id,
+    shiftId,
+    payload,
+    deviceTime
+  }).catch(err => log('error', 'alarm tracking failed',
+    { machine_id: machine.id, error: err.message }));
 
   // 🔥 Offload hourly production — DO NOT block ingestion
   if (prev && prev.received_at) {

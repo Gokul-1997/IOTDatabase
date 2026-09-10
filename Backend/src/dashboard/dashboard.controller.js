@@ -4,6 +4,7 @@ const maintenanceSvc = require('./maintenance.service');
 const preventiveSvc  = require('./preventive.service');
 const pmEngine       = require('../maintenance/pm-engine.service');
 const periodicSvc   = require('./periodic.service');
+const alarmSvc      = require('./alarm.service');
 const periodicEngine = require('../maintenance/periodic-engine.service');
 const excel         = require('../reports/excel.util');
 const PDFDocument   = require('pdfkit');
@@ -78,6 +79,56 @@ exports.machineDetail = async (req, res) => {
    FACTORY OVERALL DASHBOARD (Phase 2 · Screen 1)
    GET /dashboard/factory?date=&shift_id=&machine_id=
 ===================================================== */
+/* ─────────────────────────────────────────────────────────────
+   Phase 2 · Screen 5 — Alarm Dashboard & Reports
+   ───────────────────────────────────────────────────────────── */
+
+exports.alarms = async (req, res) => {
+  try {
+    const data = await alarmSvc.getAlarms({ ...req.query, company_id: req.user.company_id });
+    return res.json({ status: 'success', data });
+  } catch (err) {
+    console.error('Alarm dashboard error:', err);
+    return res.status(err.status || 500).json({ status: 'error', message: err.message });
+  }
+};
+
+exports.exportAlarms = async (req, res) => {
+  try {
+    const format = String(req.params.format || '').toLowerCase();
+    const rows = await alarmSvc.getExportRows({ ...req.query, company_id: req.user.company_id });
+
+    if (!rows.length) {
+      return res.status(404).json({ status: 'error', message: 'No alarms match these filters' });
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'xlsx') {
+      const file = excel.createExcel('Alarms', rows);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=alarms_${stamp}.xlsx`);
+      return res.send(file);
+    }
+    if (format === 'csv') {
+      return res.type('text/csv')
+        .setHeader('Content-Disposition', `attachment; filename=alarms_${stamp}.csv`)
+        .send(toCsv(rows));
+    }
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=alarms_${stamp}.pdf`);
+      return tablePdf(res, 'Alarm Report', rows,
+        ['Machine', 'Shift', 'Alarm code', 'Alarm name', 'Severity', 'Generated', 'Closed', 'Duration', 'Status'],
+        [80, 60, 70, 150, 55, 105, 105, 60, 50]);
+    }
+    return res.status(400).json({ status: 'error', message: 'format must be xlsx, csv or pdf' });
+  } catch (err) {
+    console.error('Alarm export error:', err);
+    return res.status(err.status || 500).json({ status: 'error', message: err.message });
+  }
+};
+
 /* ─────────────────────────────────────────────────────────────
    Phase 2 · Screen 4 — Periodic Maintenance
    Time-based maintenance: due because the calendar says so, as opposed
@@ -183,7 +234,9 @@ exports.exportPeriodic = async (req, res) => {
     if (format === 'pdf') {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename=periodic_maintenance_${stamp}.pdf`);
-      return periodicPdf(rows, res);
+      return tablePdf(res, 'Periodic Maintenance', rows,
+        ['Ticket', 'Machine', 'Task', 'Frequency', 'Priority', 'Status', 'Due date', 'Completed', 'Overdue', 'Technician'],
+        [45, 85, 175, 70, 60, 70, 70, 70, 50, 90]);
     }
 
     return res.status(400).json({ status: 'error', message: 'format must be xlsx, csv or pdf' });
@@ -209,44 +262,47 @@ function toCsv(rows) {
   return [headers.join(','), ...rows.map(r => headers.map(h => cell(r[h])).join(','))].join('\r\n');
 }
 
-/** A printable summary, streamed so a large export never buffers in memory. */
-function periodicPdf(rows, res) {
+/**
+ * A printable table, streamed so a large export never buffers in memory.
+ *
+ * Shared by every export on these dashboards: one layout to get right, and
+ * two reports of the same data cannot drift apart in how they present it.
+ */
+function tablePdf(res, title, rows, headers, widths) {
   const doc = new PDFDocument({ margin: 36, size: 'A4', layout: 'landscape' });
   doc.pipe(res);
 
-  doc.fontSize(16).text('Periodic Maintenance', { align: 'left' });
+  doc.fontSize(16).text(title, { align: 'left' });
   doc.fontSize(9).fillColor('#555')
      .text(`Generated ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} — ${rows.length} record(s)`);
   doc.moveDown(0.8).fillColor('#000');
 
-  const headers = ['Ticket', 'Machine', 'Task', 'Frequency', 'Status', 'Due date', 'Overdue', 'Technician'];
-  const widths  = [45, 90, 190, 70, 70, 70, 55, 100];
   const left = doc.page.margins.left;
+  const width = widths.reduce((a, b) => a + b, 0);
 
-  const row = (cells, bold) => {
+  const line = (cells, bold) => {
     const y = doc.y;
     doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8);
     let x = left;
     cells.forEach((c, i) => {
-      doc.text(String(c ?? ''), x, y, { width: widths[i] - 6, ellipsis: true });
+      doc.text(String(c ?? ''), x, y, { width: widths[i] - 6, ellipsis: true, lineBreak: false });
       x += widths[i];
     });
     doc.y = y + 14;
   };
 
-  row(headers, true);
-  doc.moveTo(left, doc.y - 3).lineTo(left + widths.reduce((a, b) => a + b, 0), doc.y - 3)
-     .strokeColor('#ccc').stroke();
+  line(headers, true);
+  doc.moveTo(left, doc.y - 3).lineTo(left + width, doc.y - 3).strokeColor('#ccc').stroke();
 
   for (const r of rows) {
-    // Start a new page before writing, never after — writing first would
-    // put a clipped half-row at the bottom of the page.
+    // Break the page before writing, never after — writing first leaves a
+    // clipped half-row at the bottom of the page.
     if (doc.y > doc.page.height - doc.page.margins.bottom - 20) {
       doc.addPage();
-      row(headers, true);
+      line(headers, true);
+      doc.moveTo(left, doc.y - 3).lineTo(left + width, doc.y - 3).strokeColor('#ccc').stroke();
     }
-    row([r['Ticket'], r['Machine'], r['Task'], r['Frequency'],
-         r['Status'], r['Due date'], r['Overdue'], r['Technician']]);
+    line(headers.map(h => r[h]));
   }
 
   doc.end();
