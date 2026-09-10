@@ -44,6 +44,10 @@ router.get('/downtime/export/:format', auth, ctrl.exportDowntime);
 router.get('/operators', auth, ctrl.operators);
 router.get('/operators/export/:format', auth, ctrl.exportOperators);
 
+/* Phase 2 · Screen 8 — OEE Dashboard. */
+router.get('/oee', auth, ctrl.oeeDashboard);
+router.get('/oee/export/:format', auth, ctrl.exportOee);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 

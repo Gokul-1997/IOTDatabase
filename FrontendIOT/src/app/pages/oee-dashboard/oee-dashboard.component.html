@@ -1,0 +1,259 @@
+<div class="p-4 sm:p-6 space-y-5 min-w-0">
+
+  <!-- ══════════ HEADER ══════════ -->
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">OEE</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Availability × Performance × Quality, recomputed from the period's totals.
+        <span *ngIf="updatedAt" class="ml-1">Updated {{ updatedAt }}.</span>
+      </p>
+    </div>
+    <div class="flex items-center gap-1" role="group" aria-label="Export the filtered list">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('xlsx')" [disabled]="exporting">
+        {{ exporting === 'xlsx' ? '…' : 'Excel' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('csv')" [disabled]="exporting">
+        {{ exporting === 'csv' ? '…' : 'CSV' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('pdf')" [disabled]="exporting">
+        {{ exporting === 'pdf' ? '…' : 'PDF' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════ FILTERS ══════════ -->
+  <form class="ui-viewbar grid gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end" (ngSubmit)="submit()">
+    <div>
+      <label for="oeFrom" class="ui-label">From</label>
+      <input id="oeFrom" type="date" class="ui-input" [(ngModel)]="f.from" name="from" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="oeTo" class="ui-label">To</label>
+      <input id="oeTo" type="date" class="ui-input" [(ngModel)]="f.to" name="to" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="oeMachine" class="ui-label">Machine</label>
+      <select id="oeMachine" class="filter-select w-full" [(ngModel)]="f.machine_id" name="machine" (ngModelChange)="submit()">
+        <option [ngValue]="null">All machines</option>
+        <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="oeShift" class="ui-label">Shift</label>
+      <select id="oeShift" class="filter-select w-full" [(ngModel)]="f.shift_id" name="shift" (ngModelChange)="submit()">
+        <option [ngValue]="null">All shifts</option>
+        <option *ngFor="let s of shifts" [ngValue]="s.id">{{ s.name || s.shift_name }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="oeSearch" class="ui-label">Search</label>
+      <input id="oeSearch" type="search" class="ui-input" placeholder="Machine or model"
+             [(ngModel)]="f.search" name="search" (ngModelChange)="onSearchInput()">
+    </div>
+    <div class="sm:col-span-2 lg:col-span-5">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="reset()">Reset filters</button>
+    </div>
+  </form>
+
+  <!-- ══════════ STATES ══════════ -->
+  <p *ngIf="errorMsg" class="ui-alert ui-alert-error" role="alert">{{ errorMsg }}</p>
+  <div *ngIf="loading && !data" class="ui-alert" aria-live="polite">Loading…</div>
+
+  <ng-container *ngIf="data">
+
+    <!-- Said before any number, because it decides how much of this screen
+         means anything. Performance needs a cycle time. -->
+    <div *ngIf="data.coverage.with_cycle_time < data.coverage.machines" class="ui-alert ui-alert-info">
+      <strong>{{ data.coverage.with_cycle_time }} of {{ data.coverage.machines }} machines have a cycle time.</strong>
+      {{ data.coverage.note }}
+    </div>
+
+    <!-- ══════════ LIVE STATUS ══════════ -->
+    <div class="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Running</p>
+        <p class="text-3xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">{{ data.status_counts.RUNNING }}</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Idle</p>
+        <p class="text-3xl font-bold text-amber-700 dark:text-amber-400 mt-1">{{ data.status_counts.IDLE }}</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Alarm</p>
+        <p class="text-3xl font-bold text-red-700 dark:text-red-400 mt-1">{{ data.status_counts.ALARM }}</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Offline</p>
+        <p class="text-3xl font-bold text-slate-500 mt-1">{{ data.status_counts.OFFLINE }}</p>
+        <p class="ui-hint">No telemetry in the last hour</p>
+      </div>
+    </div>
+
+    <!-- ══════════ OEE KPIs ══════════ -->
+    <div class="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">OEE</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ pct(data.kpis.oee_pct) }}</p>
+        <p class="ui-hint">
+          <span class="px-2 py-0.5 rounded-md text-xs font-medium" [class]="bandClass(data.kpis.band)">
+            {{ data.kpis.band | titlecase }}
+          </span>
+        </p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Availability</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ pct(data.kpis.availability_pct) }}</p>
+        <p class="ui-hint">Run of planned time</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Performance</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ pct(data.kpis.performance_pct) }}</p>
+        <p class="ui-hint">{{ data.kpis.machines_measurable }} of {{ data.kpis.machines_total }} machines</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Quality</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ pct(data.kpis.quality_pct) }}</p>
+        <p class="ui-hint">Good of produced</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Total production</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.produced }}</p>
+        <p class="ui-hint">{{ data.kpis.rejected }} rejected</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Total downtime</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ hours(data.kpis.downtime_seconds) }}</p>
+        <p class="ui-hint">{{ hours(data.kpis.idle_seconds) }} idle</p>
+      </div>
+    </div>
+
+    <!-- ══════════ TREND + RANKINGS ══════════ -->
+    <div class="grid gap-4 lg:grid-cols-3">
+      <section class="ui-tabpanel lg:col-span-2 min-w-0">
+        <h2 class="ui-section-title">Availability trend</h2>
+        <apx-chart *ngIf="trendSeries.length"
+          [series]="trendSeries" [chart]="trendChart.chart" [stroke]="trendChart.stroke"
+          [fill]="trendChart.fill" [colors]="trendChart.colors" [dataLabels]="trendChart.dataLabels"
+          [xaxis]="trendChart.xaxis" [yaxis]="trendChart.yaxis" [grid]="trendChart.grid"
+          [tooltip]="trendChart.tooltip" [noData]="trendChart.noData"></apx-chart>
+      </section>
+
+      <section class="ui-tabpanel min-w-0 space-y-4">
+        <div>
+          <h2 class="ui-section-title">Top 5 machines</h2>
+          <p *ngIf="!data.top_machines.length" class="text-sm text-gray-400">No computable OEE.</p>
+          <ol class="divide-y divide-gray-100 dark:divide-gray-700">
+            <li *ngFor="let m of data.top_machines; let i = index"
+                class="py-1.5 flex items-center justify-between gap-2">
+              <span class="text-sm text-gray-700 dark:text-gray-200 truncate">
+                <span class="text-xs text-gray-400 mr-1">{{ i + 1 }}.</span>{{ m.machine_serial_no }}
+              </span>
+              <span class="text-xs font-medium text-gray-600 dark:text-gray-300">{{ pct(m.oee_pct) }}</span>
+            </li>
+          </ol>
+        </div>
+        <div>
+          <h2 class="ui-section-title">Bottom 5 machines</h2>
+          <p *ngIf="!data.bottom_machines.length" class="text-sm text-gray-400">Not enough machines to rank.</p>
+          <ol class="divide-y divide-gray-100 dark:divide-gray-700">
+            <li *ngFor="let m of data.bottom_machines" class="py-1.5 flex items-center justify-between gap-2">
+              <span class="text-sm text-gray-700 dark:text-gray-200 truncate">{{ m.machine_serial_no }}</span>
+              <span class="text-xs font-medium text-red-700 dark:text-red-400">{{ pct(m.oee_pct) }}</span>
+            </li>
+          </ol>
+        </div>
+      </section>
+    </div>
+
+    <!-- ══════════ COMPONENT COMPARISON ══════════ -->
+    <section class="ui-tabpanel min-w-0">
+      <h2 class="ui-section-title">Availability, performance and quality by machine</h2>
+      <p class="ui-hint mb-2">Only machines whose OEE can be computed appear here.</p>
+      <apx-chart *ngIf="compSeries.length"
+        [series]="compSeries" [chart]="compChart.chart" [plotOptions]="compChart.plotOptions"
+        [colors]="compChart.colors" [dataLabels]="compChart.dataLabels" [legend]="compChart.legend"
+        [xaxis]="compChart.xaxis" [yaxis]="compChart.yaxis" [grid]="compChart.grid"
+        [tooltip]="compChart.tooltip" [noData]="compChart.noData"></apx-chart>
+    </section>
+
+    <!-- ══════════ MACHINE TABLE ══════════ -->
+    <section class="ui-tabpanel min-w-0">
+      <h2 class="ui-section-title">Machine detail</h2>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <caption class="sr-only">Machine-wise OEE, best first</caption>
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+              <th scope="col" class="px-3 py-2 font-semibold">Machine</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Status</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Avail.</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Perf.</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Quality</th>
+              <th scope="col" class="px-3 py-2 font-semibold">OEE</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Production</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Good</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Rejects</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Downtime</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Alarms</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+            <tr *ngFor="let m of data.machines.data">
+              <td class="px-3 py-2">
+                <span class="block text-gray-800 dark:text-gray-100">{{ m.machine_serial_no }}</span>
+                <span class="block text-xs text-gray-400">{{ m.model }}</span>
+              </td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-0.5 rounded-md text-xs font-medium" [class]="statusClass(m.status)">
+                  {{ m.status | titlecase }}
+                </span>
+              </td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ pct(m.availability_pct) }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+                {{ pct(m.performance_pct) }}
+                <!-- said in words: this is a configuration gap, not a bad machine -->
+                <span *ngIf="!m.has_cycle_time" class="block text-xs text-gray-400">no cycle time</span>
+              </td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ pct(m.quality_pct) }}</td>
+              <td class="px-3 py-2">
+                <span class="font-medium text-gray-800 dark:text-gray-100">{{ pct(m.oee_pct) }}</span>
+                <span class="ml-1 px-2 py-0.5 rounded-md text-xs font-medium" [class]="bandClass(m.band)">
+                  {{ m.band | titlecase }}
+                </span>
+              </td>
+              <td class="px-3 py-2 text-gray-800 dark:text-gray-100 font-medium">{{ m.produced }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ m.good }}</td>
+              <td class="px-3 py-2" [class]="m.rejected > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-gray-400'">
+                {{ m.rejected }}
+              </td>
+              <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ hours(m.downtime_seconds) }}</td>
+              <td class="px-3 py-2" [class]="m.alarm_count > 0 ? 'text-red-700 dark:text-red-400' : 'text-gray-400'">
+                {{ m.alarm_count }}
+              </td>
+            </tr>
+            <tr *ngIf="!data.machines.data.length">
+              <td colspan="11" class="px-3 py-10 text-center text-gray-400">
+                No machines match these filters.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 pt-3" *ngIf="data.machines.total > 0">
+        <p class="text-xs text-gray-500" aria-live="polite">
+          Page {{ data.machines.page }} of {{ data.machines.totalPages }} ·
+          {{ data.machines.total }} machine(s)
+        </p>
+        <div class="flex items-center gap-2">
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(-1)"
+                  [disabled]="data.machines.page <= 1">Previous</button>
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(1)"
+                  [disabled]="data.machines.page >= data.machines.totalPages">Next</button>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+</div>
