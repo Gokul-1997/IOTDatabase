@@ -89,8 +89,19 @@ export class ProgramService {
     return this.http.get<any>(`${this.api}/transfers`, { params });
   }
 
-  /** Test FTP connection. Pass form values; blank password falls back to the
-   *  stored one when machine_id is provided (password is write-only). */
+  /** Programs read off a machine just before an overwrite replaced them.
+   *  Kept out of the main program list, so this is where they are found. */
+  getBackups(params: { machine_id?: number | null; page?: number; limit?: number } = {}) {
+    const query: any = {};
+    if (params.machine_id) query.machine_id = params.machine_id;
+    if (params.page)       query.page       = params.page;
+    if (params.limit)      query.limit      = params.limit;
+    return this.http.get<any>(`${this.api}/backups`, { params: query });
+  }
+
+  /** Test the connection to a machine — FTP or FOCAS, whichever it uses.
+   *  Blank password falls back to the stored one when machine_id is given
+   *  (the password is write-only). */
   testConnection(config: { machine_id?: number; ip_address?: string; ftp_port?: number;
                            ftp_user?: string; ftp_pass?: string }) {
     return this.http.post<any>(`${this.api}/test-connection`, config);

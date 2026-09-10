@@ -99,11 +99,24 @@ exports.getTransfers = async (req, res) => {
   }
 };
 
+/* Programs read off a machine before an overwrite replaced them. */
+exports.getBackups = async (req, res) => {
+  try {
+    const result = await service.getBackups(req);
+    res.json({ status: 'success', data: result.data, total: result.total });
+  } catch (e) {
+    res.status(e.status || 500).json({ status: 'error', message: e.message, code: e.code });
+  }
+};
+
 exports.testConnection = async (req, res) => {
   try {
     await service.testConnection(req);
-    res.json({ status: 'success', message: 'FTP connection successful' });
+    // Not "FTP connection successful" any more — a Fanuc machine is reached
+    // over FOCAS, and reporting the wrong protocol sends whoever is
+    // diagnosing a failure to the wrong place.
+    res.json({ status: 'success', message: 'Connection to the machine succeeded' });
   } catch (e) {
-    res.status(502).json({ status: 'error', message: e.message });
+    res.status(e.status || 502).json({ status: 'error', message: e.message, code: e.code });
   }
 };

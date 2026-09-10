@@ -154,6 +154,7 @@ const BATCH_ROW_STATUS = {
   NOT_CONFIGURED:         'NOT_CONFIGURED',
   BAD_DIRECTORY:          'NOT_CONFIGURED',
   EMPTY_PROGRAM:          'FAILED',
+  BACKUP_FAILED:          'BACKUP_FAILED',   // nothing was sent; the old program is intact
   APPROVAL_REQUIRED:      'APPROVAL_REQUIRED',
   NO_SUPERVISOR_ASSIGNED: 'NO_SUPERVISOR',
   INVALID_CODE:           'APPROVAL_REQUIRED',
@@ -167,13 +168,14 @@ const BATCH_ROW_STATUS = {
  * Notify the user who ran the transfer. Best-effort: a failure to write
  * the notification must never mask the transfer result itself.
  */
-async function notifyTransfer({ companyId, userId, ok, direction, programName, machineSerial, reason }) {
+async function notifyTransfer({ companyId, userId, ok, direction, programName, machineSerial, reason, backupName }) {
   const verb = direction === 'DOWNLOAD' ? 'received from' : 'sent to';
   const title = ok
     ? `Program ${verb} ${machineSerial}`
     : `Program transfer failed — ${machineSerial}`;
   const message = ok
-    ? `"${programName}" was ${verb} ${machineSerial}.`
+    ? `"${programName}" was ${verb} ${machineSerial}.` +
+      (backupName ? ` The program it replaced was saved as "${backupName}".` : '')
     : `"${programName}" could not be ${direction === 'DOWNLOAD' ? 'received from' : 'sent to'} ${machineSerial}. ${reason || ''}`.trim();
 
   try {
@@ -238,7 +240,11 @@ exports.getPrograms = async (req) => {
   const offset = (page - 1) * limit;
   const values = [req.user.company_id];
 
-  let whereSQL = `WHERE p.company_id = $1 AND p.is_active = true`;
+  // Backups are excluded: this list is what an operator picks from to send,
+  // and one row per overwrite would bury the programs they actually curate.
+  // They are listed by getBackups instead, per machine, where they mean
+  // something.
+  let whereSQL = `WHERE p.company_id = $1 AND p.is_active = true AND p.is_backup = false`;
   if (search) {
     values.push(`%${search}%`);
     whereSQL += ` AND (p.name ILIKE $${values.length} OR p.file_name ILIKE $${values.length})`;
@@ -350,29 +356,109 @@ async function uploadOne({ program, machine, user, overwrite, auth, verified }) 
   );
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Back up what is on the machine before replacing it
+
+   A program sitting on a controller is not necessarily a copy of anything
+   in the library. Operators edit at the panel — feeds, speeds, offsets
+   tuned against the actual part — and those edits usually exist nowhere
+   else. Overwriting on a confirmation dialog alone means the only copy of
+   that work is gone the moment someone clicks through.
+
+   So the old program is read off the machine and stored first. It is
+   stored as an ordinary program row, flagged is_backup, which means it can
+   be sent straight back if the new one turns out to be wrong. That is the
+   whole reason to keep it, and a shape that could not be sent back would
+   be a museum piece.
+   ───────────────────────────────────────────────────────────── */
+
+function backupFailedError(fileName, reason) {
+  const e = new Error(
+    `Could not back up "${fileName}" from the machine, so nothing was sent. ${reason}`
+  );
+  e.status = 502;
+  e.code = 'BACKUP_FAILED';
+  return e;
+}
+
+/**
+ * Read the program currently on the machine and store it as a backup.
+ * Runs inside the machine lock, between the existence check and the send.
+ *
+ * @returns {Promise<{id: number, name: string, file_size: number}>}
+ */
+async function backupBeforeOverwrite({ machine, program, user, transport }) {
+  let content;
+  try {
+    content = await transport.fetchProgramFromMachine(machine, program.file_name);
+  } catch (err) {
+    // Refusing to continue is the point. Sending anyway would destroy the
+    // very thing the backup exists to protect, and the operator would have
+    // no way of knowing until they went looking for it.
+    throw backupFailedError(program.file_name, err.message);
+  }
+
+  if (!content || content.length === 0) {
+    throw backupFailedError(program.file_name, 'The machine returned an empty program.');
+  }
+
+  const takenAt = new Date();
+  const label = takenAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+
+  const { rows: [row] } = await pool.query(
+    `INSERT INTO programs
+       (company_id, name, file_name, content, file_size, description, uploaded_by,
+        source, is_backup, backup_of_machine_id, backup_of_program_id, backup_taken_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'CNC',TRUE,$8,$9,$10)
+     RETURNING id, name, file_size`,
+    [
+      user.company_id,
+      `${program.file_name} — ${machine.machine_serial_no} backup ${label}`,
+      program.file_name,
+      content,
+      content.length,
+      `Read from ${machine.machine_serial_no} before "${program.name}" replaced it.`,
+      user.id,
+      machine.id,
+      program.id,
+      takenAt
+    ]
+  );
+
+  return row;
+}
+
 /** The transfer itself. Only ever called holding the machine's lock. */
 async function uploadOneLocked({ program, machine, user, overwrite, authorization }) {
   const companyId = user.company_id;
+  const transport = transportFor(machine);
 
-  if (!overwrite && await transportFor(machine).machineFileExists(machine, program.file_name)) {
+  const exists = await transport.machineFileExists(machine, program.file_name);
+  if (exists && !overwrite) {
     throw fileExistsError(program.file_name);
   }
+
+  // Read the old program off the machine before replacing it. Still inside
+  // the machine lock, so nothing can write between the backup and the send.
+  const backup = exists
+    ? await backupBeforeOverwrite({ machine, program, user, transport })
+    : null;
 
   // log first so an interrupted transfer still leaves a trace
   const { rows: [{ id: transferId }] } = await pool.query(
     `INSERT INTO program_transfers
        (company_id, program_id, machine_id, program_name, file_name, machine_serial,
         direction, file_size, status, transferred_by,
-        authorized_by, authorization_id, authorized_at)
-     VALUES ($1,$2,$3,$4,$5,$6,'UPLOAD',$7,'PENDING',$8,$9,$10,NOW())
+        authorized_by, authorization_id, authorized_at, backup_program_id)
+     VALUES ($1,$2,$3,$4,$5,$6,'UPLOAD',$7,'PENDING',$8,$9,$10,NOW(),$11)
      RETURNING id`,
     [companyId, program.id, machine.id, program.name, program.file_name,
      machine.machine_serial_no, program.content?.length || null, user.id,
-     authorization.supervisor_id, authorization.id]
+     authorization.supervisor_id, authorization.id, backup?.id ?? null]
   );
 
   try {
-    await transportFor(machine).sendProgramToMachine(
+    await transport.sendProgramToMachine(
       machine, program.content, program.file_name,
       progressEmitter(user.id, transferId, program.file_name, 'UPLOAD')
     );
@@ -383,10 +469,18 @@ async function uploadOneLocked({ program, machine, user, overwrite, authorizatio
     );
     await notifyTransfer({
       companyId, userId: user.id, ok: true, direction: 'UPLOAD',
-      programName: program.name, machineSerial: machine.machine_serial_no
+      programName: program.name, machineSerial: machine.machine_serial_no,
+      backupName: backup?.name
     });
 
-    return { transfer_id: transferId, status: 'SUCCESS' };
+    return {
+      transfer_id: transferId,
+      status: 'SUCCESS',
+      // The UI says so explicitly — an operator who knows the old program
+      // was kept will overwrite when they should, and go looking for it
+      // when they need to.
+      backup: backup ? { id: backup.id, name: backup.name, file_size: backup.file_size } : null
+    };
   } catch (err) {
     await pool.query(
       `UPDATE program_transfers SET status = 'FAILED', error_message = $2, finished_at = NOW() WHERE id = $1`,
@@ -479,7 +573,9 @@ exports.transferBatch = async (req) => {
         results.push({
           program_id: program.id, program_name: program.name,
           machine_id: machine.id, machine_serial: machine.machine_serial_no,
-          status: 'SUCCESS', transfer_id: r.transfer_id
+          status: 'SUCCESS', transfer_id: r.transfer_id,
+          // so the UI can tell the operator their old program was kept
+          backup: r.backup
         });
       } catch (err) {
         // A batch can span machines with different supervisors, so an
@@ -575,6 +671,45 @@ async function fetchLocked(machine, file_name, user) {
   }
 }
 
+/* BACKUPS TAKEN OFF A MACHINE
+   The answer to "what was on this machine before we changed it?" — which is
+   asked when a new program is behaving wrong and someone needs the previous
+   one back on the controller now, not after a search through the library. */
+exports.getBackups = async (req) => {
+  const { machine_id, page = 1, limit = 20 } = req.query;
+  const offset = (page - 1) * limit;
+  const values = [req.user.company_id];
+
+  let whereSQL = `WHERE p.company_id = $1 AND p.is_active = true AND p.is_backup = true`;
+  if (machine_id) {
+    values.push(machine_id);
+    whereSQL += ` AND p.backup_of_machine_id = $${values.length}`;
+  }
+
+  const dataQuery = `
+    SELECT p.id, p.name, p.file_name, p.file_size, p.backup_taken_at,
+           p.backup_of_machine_id, m.machine_serial_no,
+           u.username AS taken_by_name,
+           r.name AS replaced_by_program_name
+    FROM programs p
+    LEFT JOIN machines m ON m.id = p.backup_of_machine_id
+    LEFT JOIN users    u ON u.id = p.uploaded_by
+    LEFT JOIN programs r ON r.id = p.backup_of_program_id
+    ${whereSQL}
+    ORDER BY p.backup_taken_at DESC, p.id DESC
+    LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+  `;
+
+  const countQuery = `SELECT COUNT(*)::int AS total FROM programs p ${whereSQL}`;
+
+  const [dataRes, countRes] = await Promise.all([
+    pool.query(dataQuery, [...values, limit, offset]),
+    pool.query(countQuery, values)
+  ]);
+
+  return { data: dataRes.rows, total: countRes.rows[0].total };
+};
+
 /* TRANSFER HISTORY */
 exports.getTransfers = async (req) => {
   const { page = 1, limit = 20, machine_id, direction } = req.query;
@@ -594,12 +729,14 @@ exports.getTransfers = async (req) => {
   const dataQuery = `
     SELECT t.id, t.program_name, t.file_name, t.machine_serial, t.status,
            t.direction, t.file_size, t.error_message, t.started_at, t.finished_at,
-           t.authorized_at,
+           t.authorized_at, t.backup_program_id,
            u.username AS transferred_by_name,
-           s.username AS authorized_by_name
+           s.username AS authorized_by_name,
+           b.name     AS backup_program_name
     FROM program_transfers t
     LEFT JOIN users u ON u.id = t.transferred_by
     LEFT JOIN users s ON s.id = t.authorized_by
+    LEFT JOIN programs b ON b.id = t.backup_program_id
     ${whereSQL}
     ORDER BY t.started_at DESC
     LIMIT $${values.length + 1} OFFSET $${values.length + 2}

@@ -273,6 +273,17 @@ export class ProgramsComponent implements OnInit, OnDestroy {
           return;
         }
 
+        // The old program could not be read back, so nothing was sent. Say
+        // that plainly — the machine is untouched, and an operator who
+        // thinks a half-transfer happened will go and check the panel.
+        const backupFailed = results.filter((r: any) => r.status === 'BACKUP_FAILED');
+        if (backupFailed.length) {
+          this.closeAuthPrompt();
+          this.toast.error(backupFailed[0].message ||
+            'The program on the machine could not be backed up, so nothing was sent.');
+          return;
+        }
+
         // The machine is mid-transfer for someone else. Retrying is the fix,
         // so say that rather than reporting a failure the operator would
         // reasonably read as a broken machine.
@@ -308,8 +319,19 @@ export class ProgramsComponent implements OnInit, OnDestroy {
         this.closeAuthPrompt();
         this.activeAuth = null;
 
-        if (res.data?.failed) this.toast.error(`${res.data.failed} of ${res.data.total} transfers failed`);
-        else this.toast.success(res.message || 'Transfer complete');
+        if (res.data?.failed) {
+          this.toast.error(`${res.data.failed} of ${res.data.total} transfers failed`);
+        } else {
+          // Naming the backup in the success message is what makes the
+          // guarantee real to the operator — otherwise it is a promise in a
+          // dialog they have already dismissed.
+          const backups = results.filter((r: any) => r.backup).length;
+          this.toast.success(
+            backups
+              ? `Transfer complete. ${backups === 1 ? 'The program it replaced was' : backups + ' replaced programs were'} saved under Backups.`
+              : (res.message || 'Transfer complete')
+          );
+        }
 
         this.selectedProgramIds.clear();
         this.loadMachineFiles();

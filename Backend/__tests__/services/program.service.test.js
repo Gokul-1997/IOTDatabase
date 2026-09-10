@@ -29,7 +29,7 @@ jest.mock('../../src/programs/authorization.service', () => ({
 
 const { mockDb, resetDb } = require('../helpers/mockDb');
 const {
-  sendProgramToMachine, machineFileExists, testMachineConnection
+  sendProgramToMachine, fetchProgramFromMachine, machineFileExists, testMachineConnection
 } = require('../../src/programs/program.transfer');
 const { assertAuthorized } = require('../../src/programs/authorization.service');
 const svc = require('../../src/programs/program.service');
@@ -42,6 +42,7 @@ const VERIFIED = { id: 77, supervisor_id: 42 };
 beforeEach(() => {
   resetDb();
   sendProgramToMachine.mockReset();
+  fetchProgramFromMachine.mockReset();
   machineFileExists.mockReset();
   testMachineConnection.mockReset();
   assertAuthorized.mockReset();
@@ -107,7 +108,8 @@ describe('program.service.transferProgram', () => {
 
     const result = await svc.transferProgram(req);
 
-    expect(result).toEqual({ transfer_id: 99, status: 'SUCCESS' });
+    // nothing was on the machine, so there was nothing to back up
+    expect(result).toEqual({ transfer_id: 99, status: 'SUCCESS', backup: null });
     expect(sendProgramToMachine).toHaveBeenCalledWith(
       machineRow, programRow.content, 'O1234.nc', expect.any(Function)
     );
@@ -152,20 +154,29 @@ describe('program.service.transferProgram', () => {
     expect(sendProgramToMachine).not.toHaveBeenCalled();
   });
 
-  test('overwrite:true sends even when the file is already there', async () => {
+  test('overwrite:true backs the old program up, then sends', async () => {
     mockDb.queueResponse(
       { rows: [programRow], rowCount: 1 },
       { rows: [machineRow], rowCount: 1 },
-      { rows: [{ id: 101 }], rowCount: 1 },
-      { rows: [], rowCount: 1 }
+      { rows: [{ id: 500, name: 'O1234.nc backup', file_size: 12 }], rowCount: 1 },  // backup INSERT
+      { rows: [{ id: 101 }], rowCount: 1 },                                          // transfer row
+      { rows: [], rowCount: 1 }                                                      // mark SUCCESS
     );
     machineFileExists.mockResolvedValue(true);
+    fetchProgramFromMachine.mockResolvedValue(Buffer.from('O1234\nOLD\nM30'));
     sendProgramToMachine.mockResolvedValue();
 
     const result = await svc.transferProgram({ ...req, body: { overwrite: true } });
 
-    expect(result).toEqual({ transfer_id: 101, status: 'SUCCESS' });
-    expect(sendProgramToMachine).toHaveBeenCalled();
+    expect(result.status).toBe('SUCCESS');
+    expect(result.backup).toEqual({ id: 500, name: 'O1234.nc backup', file_size: 12 });
+
+    // order is the whole safety property: read the old one before writing over it
+    const order = [
+      fetchProgramFromMachine.mock.invocationCallOrder[0],
+      sendProgramToMachine.mock.invocationCallOrder[0]
+    ];
+    expect(order[0]).toBeLessThan(order[1]);
   });
 
   test('throws when program not found', async () => {
@@ -229,7 +240,8 @@ describe('program.service.transferProgram', () => {
     expect(insert.text).toMatch(/authorized_by, authorization_id, authorized_at/);
     // transferred_by is the operator who clicked; authorized_by the
     // supervisor who signed it off. The agreement requires both.
-    expect(insert.params.slice(-3)).toEqual([user.id, VERIFIED.supervisor_id, VERIFIED.id]);
+    expect(insert.params.slice(-4, -1)).toEqual([user.id, VERIFIED.supervisor_id, VERIFIED.id]);
+    expect(insert.params.at(-1)).toBeNull();   // nothing was replaced
   });
 });
 
@@ -514,5 +526,148 @@ describe('program.service.cleanupStuckTransfers', () => {
     expect(q).toMatch(/SET status = 'FAILED'/);
     expect(q).toMatch(/status = 'PENDING'/);
     expect(q).toMatch(/INTERVAL '5 minutes'/);
+  });
+});
+
+/*
+ * Backup before overwrite.
+ *
+ * A program on a controller is not necessarily a copy of anything in the
+ * library — operators edit at the panel, and those edits often exist
+ * nowhere else. So the old program is read off the machine and stored
+ * before the new one is sent, and if that read fails nothing is sent at
+ * all. Overwriting something we failed to back up would destroy exactly
+ * what the backup exists to protect.
+ */
+describe('program.service — backup before overwrite', () => {
+  const req = { user, params: { id: '10', machineId: '20' }, body: { overwrite: true } };
+  const programRow = { id: 10, name: 'Flange', file_name: 'O1234.nc', content: Buffer.from('G0 X0') };
+  const machineRow = { id: 20, machine_serial_no: 'VMC-01', ip_address: '192.168.1.101' };
+
+  const lookups = () => mockDb.queueResponse(
+    { rows: [programRow], rowCount: 1 },
+    { rows: [machineRow], rowCount: 1 }
+  );
+
+  test('nothing on the machine means no backup and no wasted read', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 }, { rows: [machineRow], rowCount: 1 },
+      { rows: [{ id: 99 }], rowCount: 1 }, { rows: [], rowCount: 1 }
+    );
+    machineFileExists.mockResolvedValue(false);
+    sendProgramToMachine.mockResolvedValue();
+
+    const result = await svc.transferProgram(req);
+
+    expect(result.backup).toBeNull();
+    expect(fetchProgramFromMachine).not.toHaveBeenCalled();
+  });
+
+  test('the backup is stored against the machine it came from', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 }, { rows: [machineRow], rowCount: 1 },
+      { rows: [{ id: 500, name: 'bk', file_size: 9 }], rowCount: 1 },
+      { rows: [{ id: 101 }], rowCount: 1 }, { rows: [], rowCount: 1 }
+    );
+    machineFileExists.mockResolvedValue(true);
+    fetchProgramFromMachine.mockResolvedValue(Buffer.from('OLD PROG'));
+    sendProgramToMachine.mockResolvedValue();
+
+    await svc.transferProgram(req);
+
+    const insert = mockDb.calls().find(c => /is_backup/.test(c.text));
+    expect(insert.text).toMatch(/INSERT INTO programs/i);
+    expect(insert.params).toContain(machineRow.id);      // backup_of_machine_id
+    expect(insert.params).toContain(programRow.id);      // which program replaced it
+    expect(insert.params.some(p => Buffer.isBuffer(p) && p.toString() === 'OLD PROG')).toBe(true);
+  });
+
+  test('the transfer row records which backup belongs to it', async () => {
+    mockDb.queueResponse(
+      { rows: [programRow], rowCount: 1 }, { rows: [machineRow], rowCount: 1 },
+      { rows: [{ id: 500, name: 'bk', file_size: 9 }], rowCount: 1 },
+      { rows: [{ id: 101 }], rowCount: 1 }, { rows: [], rowCount: 1 }
+    );
+    machineFileExists.mockResolvedValue(true);
+    fetchProgramFromMachine.mockResolvedValue(Buffer.from('OLD'));
+    sendProgramToMachine.mockResolvedValue();
+
+    await svc.transferProgram(req);
+
+    const transferInsert = mockDb.calls().find(c => /INSERT INTO program_transfers/i.test(c.text));
+    expect(transferInsert.text).toMatch(/backup_program_id/);
+    expect(transferInsert.params.at(-1)).toBe(500);
+  });
+
+  test('a failed backup stops the transfer — nothing is sent', async () => {
+    lookups();
+    machineFileExists.mockResolvedValue(true);
+    fetchProgramFromMachine.mockRejectedValue(new Error('EW_BUSY'));
+
+    await expect(svc.transferProgram(req)).rejects.toMatchObject({
+      code: 'BACKUP_FAILED', status: 502
+    });
+
+    // the old program on the machine is still there, untouched
+    expect(sendProgramToMachine).not.toHaveBeenCalled();
+  });
+
+  test('an empty read counts as a failed backup', async () => {
+    lookups();
+    machineFileExists.mockResolvedValue(true);
+    fetchProgramFromMachine.mockResolvedValue(Buffer.alloc(0));
+
+    // Storing zero bytes would look like a backup and restore nothing.
+    await expect(svc.transferProgram(req)).rejects.toMatchObject({ code: 'BACKUP_FAILED' });
+    expect(sendProgramToMachine).not.toHaveBeenCalled();
+  });
+
+  test('the failure message says the transfer did not happen', async () => {
+    lookups();
+    machineFileExists.mockResolvedValue(true);
+    fetchProgramFromMachine.mockRejectedValue(new Error('timeout'));
+
+    await expect(svc.transferProgram(req)).rejects.toThrow(/nothing was sent/i);
+  });
+});
+
+describe('program.service.getPrograms', () => {
+  test('backups are kept out of the list operators send from', async () => {
+    mockDb.queueResponse({ rows: [], rowCount: 0 }, { rows: [{ total: 0 }], rowCount: 1 });
+
+    await svc.getPrograms({ user, query: {} });
+
+    // one row per overwrite would bury the programs people actually curate
+    expect(mockDb.calls()[0].text).toMatch(/is_backup = false/);
+  });
+});
+
+describe('program.service.getBackups', () => {
+  test('lists only backups, newest first', async () => {
+    mockDb.queueResponse({ rows: [], rowCount: 0 }, { rows: [{ total: 0 }], rowCount: 1 });
+
+    await svc.getBackups({ user, query: {} });
+
+    const q = mockDb.calls()[0].text;
+    expect(q).toMatch(/is_backup = true/);
+    expect(q).toMatch(/ORDER BY p\.backup_taken_at DESC/);
+  });
+
+  test('filters to one machine when asked', async () => {
+    mockDb.queueResponse({ rows: [], rowCount: 0 }, { rows: [{ total: 0 }], rowCount: 1 });
+
+    await svc.getBackups({ user, query: { machine_id: 20 } });
+
+    expect(mockDb.calls()[0].text).toMatch(/backup_of_machine_id = \$2/);
+    expect(mockDb.calls()[0].params).toContain(20);
+  });
+
+  test('scoped to the caller company', async () => {
+    mockDb.queueResponse({ rows: [], rowCount: 0 }, { rows: [{ total: 0 }], rowCount: 1 });
+
+    await svc.getBackups({ user, query: {} });
+
+    expect(mockDb.calls()[0].text).toMatch(/p\.company_id = \$1/);
+    expect(mockDb.calls()[0].params[0]).toBe(user.company_id);
   });
 });

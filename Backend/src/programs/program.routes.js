@@ -38,6 +38,9 @@ router.get('/', auth, permit('page:programs:view'), controller.getPrograms);
 // Transfer history (must come before /:id routes)
 router.get('/transfers', auth, permit('page:programs:view'), controller.getTransfers);
 
+// Programs saved off a machine before an overwrite replaced them
+router.get('/backups', auth, permit('page:programs:view'), controller.getBackups);
+
 // Test FTP connection (body: machine_id and/or ip_address, ftp_port, ftp_user, ftp_pass)
 router.post('/test-connection', auth, permit('page:programs:transfer'), controller.testConnection);
 
