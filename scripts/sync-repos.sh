@@ -20,6 +20,16 @@
 #
 # Nothing here rewrites history, so a mistake is always recoverable by
 # pushing again.
+#
+# ── Which branch is which ──────────────────────────────────────────────
+# This workspace sits on the branch `monorepo`, and publishes to `Gokul` in
+# each of the four repos. Those are deliberately different names.
+#
+# IOTDatabase's `Gokul` branch is the MQTT collector, not this workspace.
+# When both were called Gokul, a plain `git push` from here aimed at it and
+# would have put all four folders back into the MQTT repo, undoing the
+# split. Renaming the local branch makes that mistake impossible rather
+# than merely discouraged.
 
 set -euo pipefail
 
