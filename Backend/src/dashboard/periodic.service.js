@@ -243,7 +243,15 @@ async function tickets(companyId, machineId, { search = '', status = '', page = 
   const limitNum = Math.min(100, Math.max(1, Number(limit) || 10));
   const offset   = (pageNum - 1) * limitNum;
 
-  const values = [companyId, machineId, LIVE_STATUSES];
+  /*
+   * The two queries do not take the same parameters, so they cannot share
+   * one array. `where` is common to both; the live-status list is only used
+   * by the data query's is_overdue expression, and limit/offset only by its
+   * paging. Passing the union to both is what makes the count query receive
+   * more parameters than it references — which Postgres rejects outright,
+   * rather than ignoring the extras.
+   */
+  const values = [companyId, machineId];
   let where = `WHERE t.company_id = $1
                  AND t.schedule_id IS NOT NULL
                  AND ($2::int IS NULL OR t.machine_id = $2)`;
@@ -257,13 +265,17 @@ async function tickets(companyId, machineId, { search = '', status = '', page = 
     where += ` AND t.status = $${values.length}`;
   }
 
+  const liveIdx   = values.length + 1;
+  const limitIdx  = values.length + 2;
+  const offsetIdx = values.length + 3;
+
   const dataQuery = `
     SELECT t.id, t.title, t.status, t.priority, t.due_date,
            COALESCE(t.resolved_at, t.closed_at) AS completed_at,
            s.frequency, s.grace_days,
            m.machine_serial_no,
            COALESCE(u.username, NULL) AS assigned_to_name,
-           (t.status = ANY($3)
+           (t.status = ANY($${liveIdx})
             AND t.due_date + make_interval(days => COALESCE(s.grace_days,0)) < NOW()) AS is_overdue
       FROM maintenance_tickets t
       JOIN maintenance_schedules s ON s.id = t.schedule_id
@@ -271,7 +283,7 @@ async function tickets(companyId, machineId, { search = '', status = '', page = 
       LEFT JOIN users u ON u.id = t.assigned_to
       ${where}
      ORDER BY t.due_date DESC, t.id DESC
-     LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+     LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
 
   const countQuery = `
     SELECT COUNT(*)::int AS total
@@ -281,7 +293,7 @@ async function tickets(companyId, machineId, { search = '', status = '', page = 
       ${where}`;
 
   const [dataRes, countRes] = await Promise.all([
-    pool.query(dataQuery, [...values, limitNum, offset]),
+    pool.query(dataQuery, [...values, LIVE_STATUSES, limitNum, offset]),
     pool.query(countQuery, values)
   ]);
 

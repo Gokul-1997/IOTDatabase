@@ -251,3 +251,51 @@ describe('export', () => {
     expect(rows[0]['Due date']).toBe('2026-09-10');
   });
 });
+
+/*
+ * Parameter binding.
+ *
+ * The tests above assert SQL *text*, which a mocked driver will happily
+ * accept however many parameters come with it. Postgres will not: a
+ * statement handed more parameters than it references is rejected
+ * outright, and that is how the count query — which shares its WHERE with
+ * the data query but needs neither the status list nor limit/offset —
+ * shipped broken past a green suite.
+ *
+ * Every filter combination shifts the placeholder indices, so each one is
+ * its own chance to get this wrong.
+ */
+describe('every query binds exactly the parameters it references', () => {
+  const highest = sql => {
+    const found = [...sql.matchAll(/\$(\d+)/g)].map(m => Number(m[1]));
+    return found.length ? Math.max(...found) : 0;
+  };
+
+  test.each([
+    ['no filters',            {}],
+    ['search only',           { search: 'grease' }],
+    ['status only',           { status: 'OPEN' }],
+    ['search and status',     { search: 'grease', status: 'OPEN' }],
+    ['machine and search',    { machine_id: 5, search: 'x' }],
+    ['machine, search, status', { machine_id: 5, search: 'x', status: 'CLOSED' }]
+  ])('%s', async (_label, filters) => {
+    queueDashboard();
+    await svc.getPeriodic({ company_id, ...filters });
+
+    for (const call of mockDb.calls()) {
+      // A statement may reference fewer placeholders than it is given only
+      // if it references none at all; otherwise the counts must match.
+      expect(call.params.length).toBe(highest(call.text));
+    }
+  });
+
+  test('the export path too', async () => {
+    mockDb.queueResponse({ rows: [] }, { rows: [{ total: 0 }] });
+
+    await svc.getExportRows({ company_id, search: 'x', status: 'OPEN', machine_id: 5 });
+
+    for (const call of mockDb.calls()) {
+      expect(call.params.length).toBe(highest(call.text));
+    }
+  });
+});
