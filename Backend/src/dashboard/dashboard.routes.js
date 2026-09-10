@@ -40,6 +40,10 @@ router.get('/alarms/export/:format', auth, ctrl.exportAlarms);
 router.get('/downtime', auth, ctrl.downtime);
 router.get('/downtime/export/:format', auth, ctrl.exportDowntime);
 
+/* Phase 2 · Screen 7 — Operator Performance. */
+router.get('/operators', auth, ctrl.operators);
+router.get('/operators/export/:format', auth, ctrl.exportOperators);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 

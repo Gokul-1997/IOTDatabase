@@ -6,6 +6,7 @@ const pmEngine       = require('../maintenance/pm-engine.service');
 const periodicSvc   = require('./periodic.service');
 const alarmSvc      = require('./alarm.service');
 const downtimeSvc   = require('./downtime.service');
+const operatorSvc   = require('./operator.service');
 const periodicEngine = require('../maintenance/periodic-engine.service');
 const excel         = require('../reports/excel.util');
 const PDFDocument   = require('pdfkit');
@@ -80,6 +81,55 @@ exports.machineDetail = async (req, res) => {
    FACTORY OVERALL DASHBOARD (Phase 2 · Screen 1)
    GET /dashboard/factory?date=&shift_id=&machine_id=
 ===================================================== */
+/* ─────────────────────────────────────────────────────────────
+   Phase 2 · Screen 7 — Operator Performance
+   ───────────────────────────────────────────────────────────── */
+
+exports.operators = async (req, res) => {
+  try {
+    const data = await operatorSvc.getOperators({ ...req.query, company_id: req.user.company_id });
+    return res.json({ status: 'success', data });
+  } catch (err) {
+    console.error('Operator dashboard error:', err);
+    return res.status(err.status || 500).json({ status: 'error', message: err.message });
+  }
+};
+
+exports.exportOperators = async (req, res) => {
+  try {
+    const format = String(req.params.format || '').toLowerCase();
+    const rows = await operatorSvc.getExportRows({ ...req.query, company_id: req.user.company_id });
+    if (!rows.length) {
+      return res.status(404).json({ status: 'error', message: 'No operators match these filters' });
+    }
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'xlsx') {
+      const file = excel.createExcel('Operator Performance', rows);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=operator_performance_${stamp}.xlsx`);
+      return res.send(file);
+    }
+    if (format === 'csv') {
+      return res.type('text/csv')
+        .setHeader('Content-Disposition', `attachment; filename=operator_performance_${stamp}.csv`)
+        .send(toCsv(rows));
+    }
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=operator_performance_${stamp}.pdf`);
+      return tablePdf(res, 'Operator Performance', rows,
+        ['Operator ID', 'Operator', 'Machines', 'Run time', 'Down time', 'Utilization',
+         'Produced', 'Good', 'Rejected', 'Quality rate', 'Alarms', 'OEE'],
+        [70, 130, 55, 60, 60, 60, 55, 50, 55, 65, 45, 45]);
+    }
+    return res.status(400).json({ status: 'error', message: 'format must be xlsx, csv or pdf' });
+  } catch (err) {
+    console.error('Operator export error:', err);
+    return res.status(err.status || 500).json({ status: 'error', message: err.message });
+  }
+};
+
 /* ─────────────────────────────────────────────────────────────
    Phase 2 · Screen 6 — Downtime Reason Loss Analysis
    ───────────────────────────────────────────────────────────── */

@@ -46,7 +46,8 @@ export class HeaderComponent implements OnInit {
         { label: 'Preventive', path: '/preventive-maintenance', permission: 'page:dashboard' },
         { label: 'Periodic', path: '/periodic-maintenance', permission: 'page:dashboard' },
         { label: 'Alarms', path: '/alarm-report', permission: 'page:dashboard' },
-        { label: 'Downtime', path: '/downtime-analysis', permission: 'page:dashboard' }
+        { label: 'Downtime', path: '/downtime-analysis', permission: 'page:dashboard' },
+        { label: 'Operators', path: '/operator-performance', permission: 'page:dashboard' }
       ]
     },
     {

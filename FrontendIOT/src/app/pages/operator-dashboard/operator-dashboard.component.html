@@ -1,0 +1,229 @@
+<div class="p-4 sm:p-6 space-y-5 min-w-0">
+
+  <!-- ══════════ HEADER ══════════ -->
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Operator Performance</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Output, quality and utilisation for the machines each operator is assigned to.
+        <span *ngIf="updatedAt" class="ml-1">Updated {{ updatedAt }}.</span>
+      </p>
+    </div>
+    <div class="flex items-center gap-1" role="group" aria-label="Export the filtered list">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('xlsx')" [disabled]="exporting">
+        {{ exporting === 'xlsx' ? '…' : 'Excel' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('csv')" [disabled]="exporting">
+        {{ exporting === 'csv' ? '…' : 'CSV' }}
+      </button>
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="export('pdf')" [disabled]="exporting">
+        {{ exporting === 'pdf' ? '…' : 'PDF' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════ FILTERS ══════════ -->
+  <form class="ui-viewbar grid gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end" (ngSubmit)="submit()">
+    <div>
+      <label for="opFrom" class="ui-label">From</label>
+      <input id="opFrom" type="date" class="ui-input" [(ngModel)]="f.from" name="from" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="opTo" class="ui-label">To</label>
+      <input id="opTo" type="date" class="ui-input" [(ngModel)]="f.to" name="to" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="opMachine" class="ui-label">Machine</label>
+      <select id="opMachine" class="filter-select w-full" [(ngModel)]="f.machine_id" name="machine" (ngModelChange)="submit()">
+        <option [ngValue]="null">All machines</option>
+        <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="opShift" class="ui-label">Shift</label>
+      <select id="opShift" class="filter-select w-full" [(ngModel)]="f.shift_id" name="shift" (ngModelChange)="submit()">
+        <option [ngValue]="null">All shifts</option>
+        <option *ngFor="let s of shifts" [ngValue]="s.id">{{ s.name || s.shift_name }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="opSearch" class="ui-label">Operator</label>
+      <input id="opSearch" type="search" class="ui-input" placeholder="Name or code"
+             [(ngModel)]="f.search" name="search" (ngModelChange)="onSearchInput()">
+    </div>
+    <div class="sm:col-span-2 lg:col-span-5">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="reset()">Reset filters</button>
+    </div>
+  </form>
+
+  <!-- ══════════ STATES ══════════ -->
+  <p *ngIf="errorMsg" class="ui-alert ui-alert-error" role="alert">{{ errorMsg }}</p>
+  <div *ngIf="loading && !data" class="ui-alert" aria-live="polite">Loading…</div>
+
+  <ng-container *ngIf="data">
+
+    <!-- The caveat that makes every number below readable. Stated up front,
+         because a reader who assumes these are personal figures will draw
+         wrong conclusions about shared machines. -->
+    <div *ngIf="data.attribution.shared_machines > 0" class="ui-alert ui-alert-info">
+      <strong>{{ data.attribution.shared_machines }} of {{ data.attribution.operators }} operators
+      share a machine with someone else.</strong>
+      {{ data.attribution.note }}
+    </div>
+
+    <div *ngIf="oeeLooksUnrecorded" class="ui-alert ui-alert-warn">
+      <strong>OEE is not being recorded for these machines.</strong>
+      Every operator shows 0%, which reflects the stored OEE values rather than how they worked.
+      Availability and quality below are measured directly and are unaffected.
+    </div>
+
+    <!-- ══════════ FLEET KPIs ══════════ -->
+    <div class="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Total produced</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.produced }}</p>
+        <!-- measured per machine, not summed across operators, or shared
+             machines would be counted twice -->
+        <p class="ui-hint">Across all machines</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Good parts</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ data.kpis.good }}</p>
+        <p class="ui-hint">Produced less rejects</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Rejected</p>
+        <p class="text-3xl font-bold mt-1"
+           [class]="data.kpis.rejected > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-slate-100'">
+          {{ data.kpis.rejected }}
+        </p>
+        <p class="ui-hint">Rejects and rework</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Quality rate</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ pct(data.kpis.quality_rate_pct) }}</p>
+        <p class="ui-hint">Good of produced</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Utilisation</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ pct(data.kpis.utilization_pct) }}</p>
+        <p class="ui-hint">Running of manned time</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">OEE</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ pct(data.kpis.oee_pct) }}</p>
+        <p class="ui-hint">Average across machines</p>
+      </div>
+    </div>
+
+    <!-- ══════════ CHART + TOP PERFORMERS ══════════ -->
+    <div class="grid gap-4 lg:grid-cols-3">
+      <section class="ui-tabpanel lg:col-span-2 min-w-0">
+        <h2 class="ui-section-title">Production by operator</h2>
+        <apx-chart *ngIf="productionSeries.length"
+          [series]="productionSeries" [chart]="productionChart.chart"
+          [plotOptions]="productionChart.plotOptions" [colors]="productionChart.colors"
+          [dataLabels]="productionChart.dataLabels" [xaxis]="productionChart.xaxis"
+          [grid]="productionChart.grid" [tooltip]="productionChart.tooltip"
+          [noData]="productionChart.noData"></apx-chart>
+      </section>
+
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Top performers</h2>
+        <p class="ui-hint mb-2">Ranked by OEE, then quantity.</p>
+        <p *ngIf="!data.top_performers.length" class="text-sm text-gray-400">No operators in this period.</p>
+        <ol class="divide-y divide-gray-100 dark:divide-gray-700">
+          <li *ngFor="let r of data.top_performers; let i = index"
+              class="py-2 flex items-start justify-between gap-3">
+            <span class="min-w-0">
+              <!-- numbered because rank is the information here -->
+              <span class="text-xs text-gray-400 mr-1">{{ i + 1 }}.</span>
+              <span class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ r.operator_name }}</span>
+              <span class="block text-xs text-gray-500 ml-4">
+                {{ r.produced }} parts · {{ pct(r.quality_rate_pct) }} quality
+              </span>
+            </span>
+            <span class="text-xs whitespace-nowrap text-gray-600 dark:text-gray-300">{{ pct(r.oee_pct) }}</span>
+          </li>
+        </ol>
+      </section>
+    </div>
+
+    <!-- ══════════ DETAIL ══════════ -->
+    <section class="ui-tabpanel min-w-0">
+      <h2 class="ui-section-title">Operator detail</h2>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <caption class="sr-only">Operator performance, ranked</caption>
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+              <th scope="col" class="px-3 py-2 font-semibold">Operator</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Machines</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Run time</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Down time</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Utilisation</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Produced</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Good</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Rejected</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Quality</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Alarms</th>
+              <th scope="col" class="px-3 py-2 font-semibold">OEE</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+            <tr *ngFor="let r of data.operators.data">
+              <td class="px-3 py-2">
+                <span class="block text-gray-800 dark:text-gray-100">{{ r.operator_name }}</span>
+                <span class="block text-xs text-gray-400">{{ r.operator_code }}</span>
+              </td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+                {{ r.machine_count }}
+                <!-- said in words, not colour alone: this row's figures are
+                     not this person's alone -->
+                <span *ngIf="r.shared_machines > 0" class="block text-xs text-amber-700 dark:text-amber-400">
+                  {{ r.shared_machines }} shared
+                </span>
+              </td>
+              <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ hours(r.run_seconds) }}</td>
+              <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ hours(r.downtime_seconds) }}</td>
+              <td class="px-3 py-2 whitespace-nowrap" [class]="rateClass(r.utilization_pct, 50)">
+                {{ pct(r.utilization_pct) }}
+              </td>
+              <td class="px-3 py-2 text-gray-800 dark:text-gray-100 font-medium">{{ r.produced }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ r.good }}</td>
+              <td class="px-3 py-2" [class]="r.rejected > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-gray-400'">
+                {{ r.rejected }}
+              </td>
+              <td class="px-3 py-2 whitespace-nowrap" [class]="rateClass(r.quality_rate_pct, 95)">
+                {{ pct(r.quality_rate_pct) }}
+              </td>
+              <td class="px-3 py-2" [class]="r.alarm_count > 0 ? 'text-red-700 dark:text-red-400' : 'text-gray-400'">
+                {{ r.alarm_count }}
+              </td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300 whitespace-nowrap">{{ pct(r.oee_pct) }}</td>
+            </tr>
+            <tr *ngIf="!data.operators.data.length">
+              <td colspan="11" class="px-3 py-10 text-center text-gray-400">
+                No operators match these filters.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 pt-3" *ngIf="data.operators.total > 0">
+        <p class="text-xs text-gray-500" aria-live="polite">
+          Page {{ data.operators.page }} of {{ data.operators.totalPages }} ·
+          {{ data.operators.total }} operator(s)
+        </p>
+        <div class="flex items-center gap-2">
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(-1)"
+                  [disabled]="data.operators.page <= 1">Previous</button>
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(1)"
+                  [disabled]="data.operators.page >= data.operators.totalPages">Next</button>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+</div>
