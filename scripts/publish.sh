@@ -50,9 +50,20 @@ echo
 echo "──────────────────────────────────────────"
 echo " 2. Backing up the workspace"
 echo "──────────────────────────────────────────"
-# Tests run here via the pre-push hook. Quiet unless something fails.
-if git push -q origin monorepo 2>&1 | grep -viE "^$|test|✓|PASS|Building|chunk|RUN|Duration|Start at|Test Files|Tests |Snapshots|Ran all|^>|^ *$" | head -5; then :; fi
-echo "  pushed to IOTDatabase/monorepo"
+# The pre-push hook runs both test suites here, which is hundreds of lines
+# of output nobody reads when it passes. Capture it, and show it only if
+# the push actually fails — then it is the only thing you want to see.
+PUSH_LOG="$(mktemp -t publish.XXXXXX)"
+if git push origin monorepo > "$PUSH_LOG" 2>&1; then
+  echo "  tests passed, pushed to IOTDatabase/monorepo"
+  rm -f "$PUSH_LOG"
+else
+  echo "  PUSH FAILED — nothing was published. Output below:" >&2
+  echo >&2
+  tail -40 "$PUSH_LOG" >&2
+  rm -f "$PUSH_LOG"
+  exit 1
+fi
 
 echo
 echo "──────────────────────────────────────────"
