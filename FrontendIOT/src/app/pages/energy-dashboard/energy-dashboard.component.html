@@ -1,0 +1,309 @@
+<div class="p-4 sm:p-6 space-y-5 min-w-0">
+
+  <!-- ══════════ HEADER ══════════ -->
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-xl font-semibold text-gray-800 dark:text-gray-100">Energy</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">
+        Consumption, cost and overload alerts per machine.
+        <span *ngIf="updatedAt" class="ml-1">Updated {{ updatedAt }}.</span>
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="showSettings = !showSettings"
+              [attr.aria-expanded]="showSettings">
+        <mat-icon class="!w-4 !h-4 !text-base" aria-hidden="true">settings</mat-icon>
+        {{ showSettings ? 'Hide settings' : 'Tariff & limits' }}
+      </button>
+      <span class="inline-flex items-center gap-1" role="group" aria-label="Export the filtered list">
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="export('xlsx')" [disabled]="exporting">
+          {{ exporting === 'xlsx' ? '…' : 'Excel' }}
+        </button>
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="export('csv')" [disabled]="exporting">
+          {{ exporting === 'csv' ? '…' : 'CSV' }}
+        </button>
+        <button type="button" class="ui-btn ui-btn-ghost" (click)="export('pdf')" [disabled]="exporting">
+          {{ exporting === 'pdf' ? '…' : 'PDF' }}
+        </button>
+      </span>
+    </div>
+  </div>
+
+  <!-- ══════════ FILTERS ══════════ -->
+  <form class="ui-viewbar grid gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end" (ngSubmit)="submit()">
+    <div>
+      <label for="enFrom" class="ui-label">From</label>
+      <input id="enFrom" type="date" class="ui-input" [(ngModel)]="f.from" name="from" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="enTo" class="ui-label">To</label>
+      <input id="enTo" type="date" class="ui-input" [(ngModel)]="f.to" name="to" (ngModelChange)="submit()">
+    </div>
+    <div>
+      <label for="enMachine" class="ui-label">Machine</label>
+      <select id="enMachine" class="filter-select w-full" [(ngModel)]="f.machine_id" name="machine" (ngModelChange)="submit()">
+        <option [ngValue]="null">All machines</option>
+        <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+      </select>
+    </div>
+    <div>
+      <label for="enSearch" class="ui-label">Search</label>
+      <input id="enSearch" type="search" class="ui-input" placeholder="Machine or model"
+             [(ngModel)]="f.search" name="search" (ngModelChange)="onSearchInput()">
+    </div>
+    <div class="sm:col-span-2 lg:col-span-4">
+      <button type="button" class="ui-btn ui-btn-ghost" (click)="reset()">Reset filters</button>
+    </div>
+  </form>
+
+  <!-- ══════════ STATES ══════════ -->
+  <p *ngIf="errorMsg" class="ui-alert ui-alert-error" role="alert">{{ errorMsg }}</p>
+  <div *ngIf="loading && !data" class="ui-alert" aria-live="polite">Loading…</div>
+
+  <ng-container *ngIf="data">
+
+    <!-- Said plainly rather than shown as zeros, which would read as a
+         remarkably efficient factory. -->
+    <div *ngIf="noEnergyData" class="ui-alert ui-alert-warn">
+      <strong>No machine is reporting an energy counter yet.</strong>
+      Energy figures appear as soon as the devices include the <code>energy</code> field in their
+      MQTT payload. Operating time and production below are measured and are unaffected.
+    </div>
+
+    <div *ngIf="!noEnergyData && !data.coverage.tariff_configured" class="ui-alert ui-alert-info">
+      <strong>No tariff configured.</strong>
+      Energy is shown in kWh. Set a cost per unit under <strong>Tariff &amp; limits</strong> to see cost.
+    </div>
+
+    <!-- ══════════ KPIs ══════════ -->
+    <div class="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Total energy</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">
+          {{ num(data.kpis.total_kwh) }}<span class="text-base font-normal text-gray-400 ml-1"
+             *ngIf="data.kpis.total_kwh !== null">kWh</span>
+        </p>
+        <p class="ui-hint">{{ data.coverage.reporting }} of {{ data.coverage.machines }} machines reporting</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Operating time</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">
+          {{ hours(data.kpis.total_operating_seconds) }}
+        </p>
+        <p class="ui-hint">Machines running</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Energy per part</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ num(data.kpis.kwh_per_part) }}</p>
+        <p class="ui-hint">kWh · {{ data.kpis.total_produced }} parts</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Total cost</p>
+        <p class="text-3xl font-bold text-slate-900 dark:text-slate-100 mt-1">{{ num(data.kpis.total_cost) }}</p>
+        <p class="ui-hint">{{ data.currency }}</p>
+      </div>
+      <div class="ui-tabpanel">
+        <p class="ui-section-title">Overload alerts</p>
+        <p class="text-3xl font-bold mt-1"
+           [class]="data.kpis.overload_alerts > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'">
+          {{ data.kpis.overload_alerts }}
+        </p>
+        <p class="ui-hint">Peak above the configured limit</p>
+      </div>
+    </div>
+
+    <!-- ══════════ CHARTS ══════════ -->
+    <div class="grid gap-4 lg:grid-cols-2">
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Consumption per day</h2>
+        <apx-chart *ngIf="trendSeries.length"
+          [series]="trendSeries" [chart]="trendChart.chart" [stroke]="trendChart.stroke"
+          [fill]="trendChart.fill" [colors]="trendChart.colors" [dataLabels]="trendChart.dataLabels"
+          [xaxis]="trendChart.xaxis" [yaxis]="trendChart.yaxis" [grid]="trendChart.grid"
+          [tooltip]="trendChart.tooltip" [noData]="trendChart.noData"></apx-chart>
+      </section>
+
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Consumption by machine</h2>
+        <apx-chart *ngIf="machineSeries.length"
+          [series]="machineSeries" [chart]="machineChart.chart" [plotOptions]="machineChart.plotOptions"
+          [colors]="machineChart.colors" [dataLabels]="machineChart.dataLabels"
+          [xaxis]="machineChart.xaxis" [grid]="machineChart.grid"
+          [tooltip]="machineChart.tooltip" [noData]="machineChart.noData"></apx-chart>
+      </section>
+    </div>
+
+    <!-- ══════════ SHIFT + MONTH + TOP ══════════ -->
+    <div class="grid gap-4 lg:grid-cols-3">
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">By shift</h2>
+        <p *ngIf="!data.by_shift.length" class="text-sm text-gray-400">Nothing recorded.</p>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+          <li *ngFor="let s of data.by_shift" class="py-2 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700 dark:text-gray-200">{{ s.shift_name }}</span>
+            <span class="text-xs text-gray-600 dark:text-gray-300">{{ s.kwh }} kWh</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">By month</h2>
+        <p *ngIf="!data.by_month.length" class="text-sm text-gray-400">Nothing recorded.</p>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+          <li *ngFor="let m of data.by_month" class="py-2 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700 dark:text-gray-200">{{ m.month | date:'MMM yyyy' }}</span>
+            <span class="text-xs text-gray-600 dark:text-gray-300">{{ m.kwh }} kWh</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="ui-tabpanel min-w-0">
+        <h2 class="ui-section-title">Highest consumers</h2>
+        <p *ngIf="!data.top_consumers.length" class="text-sm text-gray-400">Nothing recorded.</p>
+        <ol class="divide-y divide-gray-100 dark:divide-gray-700">
+          <li *ngFor="let m of data.top_consumers; let i = index"
+              class="py-2 flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-700 dark:text-gray-200 truncate">
+              <span class="text-xs text-gray-400 mr-1">{{ i + 1 }}.</span>{{ m.machine_serial_no }}
+            </span>
+            <span class="text-xs text-gray-600 dark:text-gray-300">{{ m.kwh }} kWh</span>
+          </li>
+        </ol>
+      </section>
+    </div>
+
+    <!-- ══════════ MACHINE TABLE ══════════ -->
+    <section class="ui-tabpanel min-w-0">
+      <h2 class="ui-section-title">Machine detail</h2>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <caption class="sr-only">Energy by machine, highest first</caption>
+          <thead>
+            <tr class="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+              <th scope="col" class="px-3 py-2 font-semibold">Machine</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Energy</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Operating time</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Production</th>
+              <th scope="col" class="px-3 py-2 font-semibold">kWh / part</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Cost ({{ data.currency }})</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Peak kW</th>
+              <th scope="col" class="px-3 py-2 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+            <tr *ngFor="let m of data.machines.data">
+              <td class="px-3 py-2">
+                <span class="block text-gray-800 dark:text-gray-100">{{ m.machine_serial_no }}</span>
+                <span class="block text-xs text-gray-400">{{ m.model }}</span>
+              </td>
+              <td class="px-3 py-2 text-gray-800 dark:text-gray-100 font-medium">
+                {{ num(m.kwh) }}
+                <!-- said in words: no counter is different from no usage -->
+                <span *ngIf="m.kwh === null" class="block text-xs text-gray-400">not reporting</span>
+              </td>
+              <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ hours(m.run_seconds) }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ m.produced }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ num(m.kwh_per_part) }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ num(m.cost) }}</td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ num(m.peak_kw) }}</td>
+              <td class="px-3 py-2">
+                <span *ngIf="m.is_overloaded"
+                      class="px-2 py-0.5 rounded-md text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">
+                  Overload
+                </span>
+                <span *ngIf="!m.is_overloaded" class="text-xs text-gray-400">--</span>
+              </td>
+            </tr>
+            <tr *ngIf="!data.machines.data.length">
+              <td colspan="8" class="px-3 py-10 text-center text-gray-400">
+                No machines match these filters.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between gap-3 pt-3" *ngIf="data.machines.total > 0">
+        <p class="text-xs text-gray-500" aria-live="polite">
+          Page {{ data.machines.page }} of {{ data.machines.totalPages }} ·
+          {{ data.machines.total }} machine(s)
+        </p>
+        <div class="flex items-center gap-2">
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(-1)"
+                  [disabled]="data.machines.page <= 1">Previous</button>
+          <button type="button" class="ui-btn ui-btn-ghost" (click)="changePage(1)"
+                  [disabled]="data.machines.page >= data.machines.totalPages">Next</button>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+
+  <!-- ══════════ SETTINGS ══════════ -->
+  <section class="ui-tabpanel min-w-0" *ngIf="showSettings">
+    <h2 class="ui-section-title">Tariff &amp; limits</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      Leave the machine blank to set the company default. A row for a specific machine overrides it.
+    </p>
+
+    <form class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end mb-5" (ngSubmit)="saveSettings()">
+      <div>
+        <label for="stMachine" class="ui-label">Machine</label>
+        <select id="stMachine" class="filter-select w-full" [(ngModel)]="settingsForm.machine_id" name="stMachine">
+          <option [ngValue]="null">Company default</option>
+          <option *ngFor="let m of machines" [ngValue]="m.id">{{ m.machine_serial_no }}</option>
+        </select>
+      </div>
+      <div>
+        <label for="stCost" class="ui-label">Cost per kWh</label>
+        <input id="stCost" type="number" min="0" step="0.01" class="ui-input"
+               [(ngModel)]="settingsForm.cost_per_kwh" name="stCost">
+      </div>
+      <div>
+        <label for="stCurrency" class="ui-label">Currency</label>
+        <input id="stCurrency" type="text" maxlength="8" class="ui-input"
+               [(ngModel)]="settingsForm.currency" name="stCurrency">
+      </div>
+      <div>
+        <label for="stOverload" class="ui-label">Overload above (kW)</label>
+        <input id="stOverload" type="number" min="0" step="0.1" class="ui-input"
+               [(ngModel)]="settingsForm.overload_kw" name="stOverload">
+      </div>
+      <div>
+        <button type="submit" class="ui-btn ui-btn-primary" [disabled]="savingSettings">
+          <span *ngIf="savingSettings" class="ui-spinner" aria-hidden="true"></span>
+          {{ savingSettings ? 'Saving…' : 'Save' }}
+        </button>
+      </div>
+    </form>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <caption class="sr-only">Configured energy settings</caption>
+        <thead>
+          <tr class="text-left text-xs text-gray-500 border-b border-gray-200 dark:border-gray-700">
+            <th scope="col" class="px-3 py-2 font-semibold">Scope</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Cost per kWh</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Currency</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Overload above</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50 dark:divide-gray-700">
+          <tr *ngFor="let s of settings">
+            <td class="px-3 py-2 text-gray-800 dark:text-gray-100">
+              {{ s.machine_serial_no || 'Company default' }}
+            </td>
+            <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ s.cost_per_kwh || '--' }}</td>
+            <td class="px-3 py-2 text-gray-500">{{ s.currency }}</td>
+            <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+              {{ s.overload_kw ? s.overload_kw + ' kW' : '--' }}
+            </td>
+          </tr>
+          <tr *ngIf="!settings.length">
+            <td colspan="4" class="px-3 py-8 text-center text-gray-400">Nothing configured yet.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

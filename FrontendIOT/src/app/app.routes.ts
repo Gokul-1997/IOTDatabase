@@ -28,6 +28,7 @@ export const routes: Routes = [
       { path: 'downtime-analysis', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/downtime-dashboard/downtime-dashboard.component').then(m => m.DowntimeDashboardComponent) },
       { path: 'operator-performance', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/operator-dashboard/operator-dashboard.component').then(m => m.OperatorDashboardComponent) },
       { path: 'oee-dashboard', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/oee-dashboard/oee-dashboard.component').then(m => m.OeeDashboardComponent) },
+      { path: 'energy-dashboard', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/energy-dashboard/energy-dashboard.component').then(m => m.EnergyDashboardComponent) },
       { path: 'dashboard/live/:id', canActivate: [permissionGuard('page:dashboard:live')], loadComponent: () => import('./pages/dashboard/live/live.component').then(m => m.LiveComponent) },
 
       { path: 'component', canActivate: [permissionGuard('page:component')], loadComponent: () => import('./pages/component/component_list.component').then(m => m.ComponentList) },

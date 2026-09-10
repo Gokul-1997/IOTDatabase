@@ -48,7 +48,8 @@ export class HeaderComponent implements OnInit {
         { label: 'Alarms', path: '/alarm-report', permission: 'page:dashboard' },
         { label: 'Downtime', path: '/downtime-analysis', permission: 'page:dashboard' },
         { label: 'Operators', path: '/operator-performance', permission: 'page:dashboard' },
-        { label: 'OEE', path: '/oee-dashboard', permission: 'page:dashboard' }
+        { label: 'OEE', path: '/oee-dashboard', permission: 'page:dashboard' },
+        { label: 'Energy', path: '/energy-dashboard', permission: 'page:dashboard' }
       ]
     },
     {

@@ -48,6 +48,12 @@ router.get('/operators/export/:format', auth, ctrl.exportOperators);
 router.get('/oee', auth, ctrl.oeeDashboard);
 router.get('/oee/export/:format', auth, ctrl.exportOee);
 
+/* Phase 2 · Screen 9 — Energy Monitoring. */
+router.get('/energy', auth, ctrl.energy);
+router.get('/energy/settings', auth, ctrl.getEnergySettings);
+router.post('/energy/settings', auth, permit('page:dashboard'), ctrl.saveEnergySettings);
+router.get('/energy/export/:format', auth, ctrl.exportEnergy);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 
