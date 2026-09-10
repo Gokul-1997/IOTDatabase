@@ -25,6 +25,7 @@ export const routes: Routes = [
       { path: 'preventive-maintenance', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/preventive-dashboard/preventive-dashboard.component').then(m => m.PreventiveDashboardComponent) },
       { path: 'periodic-maintenance', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/periodic-dashboard/periodic-dashboard.component').then(m => m.PeriodicDashboardComponent) },
       { path: 'alarm-report', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/alarm-dashboard/alarm-dashboard.component').then(m => m.AlarmDashboardComponent) },
+      { path: 'downtime-analysis', canActivate: [permissionGuard('page:dashboard')], loadComponent: () => import('./pages/downtime-dashboard/downtime-dashboard.component').then(m => m.DowntimeDashboardComponent) },
       { path: 'dashboard/live/:id', canActivate: [permissionGuard('page:dashboard:live')], loadComponent: () => import('./pages/dashboard/live/live.component').then(m => m.LiveComponent) },
 
       { path: 'component', canActivate: [permissionGuard('page:component')], loadComponent: () => import('./pages/component/component_list.component').then(m => m.ComponentList) },

@@ -36,6 +36,10 @@ router.get('/periodic/export/:format', auth, ctrl.exportPeriodic);
 router.get('/alarms', auth, ctrl.alarms);
 router.get('/alarms/export/:format', auth, ctrl.exportAlarms);
 
+/* Phase 2 · Screen 6 — Downtime Reason Loss Analysis. */
+router.get('/downtime', auth, ctrl.downtime);
+router.get('/downtime/export/:format', auth, ctrl.exportDowntime);
+
 router.get('/live/:machine_id', auth, ctrl.machineDetail);
 
 

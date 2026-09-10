@@ -5,6 +5,7 @@ const preventiveSvc  = require('./preventive.service');
 const pmEngine       = require('../maintenance/pm-engine.service');
 const periodicSvc   = require('./periodic.service');
 const alarmSvc      = require('./alarm.service');
+const downtimeSvc   = require('./downtime.service');
 const periodicEngine = require('../maintenance/periodic-engine.service');
 const excel         = require('../reports/excel.util');
 const PDFDocument   = require('pdfkit');
@@ -79,6 +80,54 @@ exports.machineDetail = async (req, res) => {
    FACTORY OVERALL DASHBOARD (Phase 2 · Screen 1)
    GET /dashboard/factory?date=&shift_id=&machine_id=
 ===================================================== */
+/* ─────────────────────────────────────────────────────────────
+   Phase 2 · Screen 6 — Downtime Reason Loss Analysis
+   ───────────────────────────────────────────────────────────── */
+
+exports.downtime = async (req, res) => {
+  try {
+    const data = await downtimeSvc.getDowntime({ ...req.query, company_id: req.user.company_id });
+    return res.json({ status: 'success', data });
+  } catch (err) {
+    console.error('Downtime dashboard error:', err);
+    return res.status(err.status || 500).json({ status: 'error', message: err.message });
+  }
+};
+
+exports.exportDowntime = async (req, res) => {
+  try {
+    const format = String(req.params.format || '').toLowerCase();
+    const rows = await downtimeSvc.getExportRows({ ...req.query, company_id: req.user.company_id });
+    if (!rows.length) {
+      return res.status(404).json({ status: 'error', message: 'No downtime records match these filters' });
+    }
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'xlsx') {
+      const file = excel.createExcel('Downtime', rows);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=downtime_${stamp}.xlsx`);
+      return res.send(file);
+    }
+    if (format === 'csv') {
+      return res.type('text/csv')
+        .setHeader('Content-Disposition', `attachment; filename=downtime_${stamp}.csv`)
+        .send(toCsv(rows));
+    }
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=downtime_${stamp}.pdf`);
+      return tablePdf(res, 'Downtime Analysis', rows,
+        ['Machine', 'Shift', 'Start', 'End', 'Duration', 'Reason', 'Category', 'Sub reason', 'Operator', 'Status'],
+        [75, 55, 105, 105, 55, 105, 75, 90, 75, 45]);
+    }
+    return res.status(400).json({ status: 'error', message: 'format must be xlsx, csv or pdf' });
+  } catch (err) {
+    console.error('Downtime export error:', err);
+    return res.status(err.status || 500).json({ status: 'error', message: err.message });
+  }
+};
+
 /* ─────────────────────────────────────────────────────────────
    Phase 2 · Screen 5 — Alarm Dashboard & Reports
    ───────────────────────────────────────────────────────────── */
