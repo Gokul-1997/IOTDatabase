@@ -5,6 +5,7 @@ import { addToBuffer } from './buffer.js';
 import { setMqttConnected, markMessage, markError } from './health.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
+import { trackAlarm } from './src/lib/alarm-log.js';
 
 const machineCache   = new Map();
 const negativeCache  = new Map(); // api_keys that don't exist → avoid DB hammering
@@ -44,6 +45,26 @@ function parseEnergy(val) {
   const str = String(val).trim().replace(',', '.');
   const n   = parseFloat(str.replace(/[^0-9.]/g, ''));
   return isNaN(n) ? null : n;
+}
+
+/* ===============================
+   NUMERIC COERCION
+
+   Devices send numbers as numbers, as strings, and occasionally as strings
+   with a unit attached. Anything that is not a finite number becomes null
+   rather than NaN — NaN reaches Postgres as the string "NaN" and fails the
+   whole batch insert, which would drop telemetry for every machine in it,
+   not just the one that sent junk.
+================================ */
+function num(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function int(v) {
+  const n = num(v);
+  return n === null ? null : Math.trunc(n);
 }
 
 /* ===============================
@@ -377,6 +398,22 @@ async function handleMessage(apiKey, payload) {
     await redis.set(energyBaseKey, String(energy));
   }
 
+  /* Record alarm periods. Fire-and-forget for the same reason the hourly
+     rollup is: telemetry ingestion is the product, and a derived record
+     must never be able to slow it down or drop a message. Only state
+     transitions are written, so a machine alarming for an hour costs two
+     queries rather than one per second. */
+  trackAlarm({
+    prev,
+    isAlarm:   normalized.alarm,
+    companyId: machine.company_id,
+    machineId: machine.id,
+    shiftId,
+    payload,
+    deviceTime
+  }).catch(err => log('error', 'alarm tracking failed',
+    { machine_id: machine.id, error: err.message }));
+
   // 🔥 Offload hourly production — DO NOT block ingestion
   if (prev && prev.received_at) {
     enqueueHourly({
@@ -428,6 +465,21 @@ async function handleMessage(apiKey, payload) {
     }))
     .exec();
 
+  /*
+   * Everything telemetry_raw can hold.
+   *
+   * Four of these — program_number, total_run_time, total_cutting_time and
+   * run_time — are columns that already existed and were already in the
+   * INSERT, but were never passed here, so buffer.js wrote NULL for them on
+   * every one of the ~450,000 rows a day. A device sending them had them
+   * silently discarded, which made "the device does not send it" and "we
+   * throw it away" indistinguishable from the database.
+   *
+   * Names are accepted in more than one spelling where controllers differ.
+   * A field the devices do not send yet costs nothing: it arrives as null
+   * today and lands the moment the firmware starts including it, with no
+   * change here.
+   */
   addToBuffer({
     plant_id:       machine.plant_id,
     company_id:     machine.company_id,
@@ -435,13 +487,27 @@ async function handleMessage(apiKey, payload) {
     machine_status: normalized.machine_status,
     alarm:          normalized.alarm,
     parts_count:    partsCount,
-    spindle_load:   payload.spindle_load   ?? null,
-    feed_rate:      payload.feed_rate      ?? null,
-    cutting_speed:  payload.cutting_speed  ?? null,
+    spindle_load:   num(payload.spindle_load),
+    feed_rate:      num(payload.feed_rate),
+    cutting_speed:  num(payload.cutting_speed ?? payload.surface_speed),
     mode,
     energy,
-    status:         payload.status         ?? null,
-    device_time:    payload.time
+    status:         payload.status ?? null,
+    device_time:    payload.time,
+
+    // running program on the controller — lets the app warn before a
+    // transfer overwrites the program an operator is mid-way through
+    program_number: int(payload.program_number ?? payload.program_no ?? payload.o_number),
+
+    // controller lifetime counters, in seconds
+    total_run_time:     int(payload.total_run_time     ?? payload.powered_on_time),
+    total_cutting_time: int(payload.total_cutting_time ?? payload.cutting_time),
+    run_time:           int(payload.run_time),
+
+    // electrical, for the energy dashboard
+    voltage: num(payload.voltage ?? payload.volts),
+    current: num(payload.current ?? payload.amps ?? payload.amperes),
+    power:   num(payload.power   ?? payload.kw)
   });
 }
 

@@ -68,7 +68,9 @@ export function getBufferStats() {
 /* ============================
    FLUSH
 ============================ */
-async function flushBuffer() {
+/* Exported so tests can flush deterministically instead of waiting on the
+   one-second timer. Production still drives it from the loop below. */
+export async function flushBuffer() {
   if (flushing || buffer.length === 0) return;
   flushing = true;
 
@@ -78,7 +80,7 @@ async function flushBuffer() {
     while (buffer.length > 0) {
       batch = buffer.splice(0, MAX_BATCH_SIZE);
 
-      const COLS = 18; // company_id + plant_id + 16 existing
+      const COLS = 21; // + voltage, current, power
       const values = [];
       const placeholders = batch.map((r, i) => {
         const base = i * COLS;
@@ -101,7 +103,10 @@ async function flushBuffer() {
           r.device_time ?? null,
           r.mode ?? null,
           r.energy ?? null,
-          new Date()
+          new Date(),
+          r.voltage ?? null,
+          r.current ?? null,
+          r.power ?? null
         );
         const cells = [];
         for (let c = 1; c <= COLS; c++) cells.push(`$${base + c}`);
@@ -113,7 +118,8 @@ async function flushBuffer() {
           company_id, plant_id, machine_id, machine_status, alarm, status,
           parts_count, spindle_load, feed_rate, cutting_speed,
           total_run_time, total_cutting_time, run_time, program_number,
-          device_time, mode, energy, received_at
+          device_time, mode, energy, received_at,
+          voltage, current, power
         )
         VALUES ${placeholders.join(',')}
       `, values);
@@ -154,12 +160,18 @@ async function startFlushLoop() {
   finally { setTimeout(startFlushLoop, FLUSH_INTERVAL); }
 }
 
-startFlushLoop();
+/* Importing this module starts a timer that never stops, which is correct
+   in the service and wrong in a test runner — Jest cannot exit while it is
+   pending, so the suite hangs rather than failing. Tests drive flushBuffer
+   directly instead. */
+if (process.env.NODE_ENV !== 'test') {
+  startFlushLoop();
 
-// Periodic stats
-setInterval(() => {
-  const s = getBufferStats();
-  if (s.size > 0 || s.droppedTotal > 0) {
-    log('info', 'buffer stats', s);
-  }
-}, 30_000);
+  // Periodic stats
+  setInterval(() => {
+    const s = getBufferStats();
+    if (s.size > 0 || s.droppedTotal > 0) {
+      log('info', 'buffer stats', s);
+    }
+  }, 30_000);
+}
