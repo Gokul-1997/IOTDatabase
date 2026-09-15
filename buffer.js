@@ -20,13 +20,79 @@ function log(level, msg, meta = {}) {
   else                       console.log(line);
 }
 
+/*
+ * Column order for the telemetry_raw INSERT, and how each value is read
+ * from a buffered row.
+ *
+ * This list is the single source of truth: the placeholder count, the
+ * column list and the values array are all derived from it, so adding a
+ * column is one line and cannot leave the three out of step. The previous
+ * hand-maintained `COLS = 21` had to be updated in three places at once.
+ *
+ * machine_status and alarm are taken from the row as mqtt.js decided them.
+ * This file used to re-derive both from the status string — but by the time
+ * a row reaches the buffer that string is already "RUNNING" or "IDLE", never
+ * "ALARM", so the alarm flag was recomputed to false on every row. Together
+ * with the collector only checking the string, that is why twelve million
+ * stored messages contain no alarm at all.
+ */
 const RUN_STATES = new Set(['RUN', 'RUNNING', 'CUTTING']);
-function normalizeMachineState(status) {
-  if (!status) return { machine_status: 'IDLE', alarm: false };
-  const s = String(status).toUpperCase();
-  if (RUN_STATES.has(s)) return { machine_status: 'RUNNING', alarm: false };
-  if (s === 'ALARM')     return { machine_status: 'IDLE',    alarm: true  };
-  return { machine_status: 'IDLE', alarm: false };
+
+const COLUMNS = [
+  ['company_id',             r => r.company_id ?? null],
+  ['plant_id',               r => r.plant_id ?? null],
+  ['machine_id',             r => r.machine_id ?? null],
+  ['machine_status',         r => RUN_STATES.has(String(r.machine_status || '').toUpperCase()) ? 'RUNNING' : 'IDLE'],
+  ['alarm',                  r => r.alarm === true],
+  ['status',                 r => r.status ?? null],
+  ['parts_count',            r => r.parts_count ?? null],
+  ['spindle_load',           r => r.spindle_load ?? null],
+  ['feed_rate',              r => r.feed_rate ?? null],
+  ['cutting_speed',          r => r.cutting_speed ?? null],
+  ['total_run_time',         r => r.total_run_time ?? null],
+  ['total_cutting_time',     r => r.total_cutting_time ?? null],
+  ['run_time',               r => r.run_time ?? null],
+  ['program_number',         r => r.program_number ?? null],
+  ['device_time',            r => r.device_time ?? null],
+  ['mode',                   r => r.mode ?? null],
+  ['energy',                 r => r.energy ?? null],
+  ['received_at',            () => new Date()],
+  ['voltage',                r => r.voltage ?? null],
+  ['current',                r => r.current ?? null],
+  ['power',                  r => r.power ?? null],
+
+  // machine condition (migration 021)
+  ['spindle_speed',          r => r.spindle_speed ?? null],
+  ['spindle_motor_temp',     r => r.spindle_motor_temp ?? null],
+  ['spindle_insulation_res', r => r.spindle_insulation_res ?? null],
+  ['servo_load_x',           r => r.servo_load_x ?? null],
+  ['servo_load_y',           r => r.servo_load_y ?? null],
+  ['servo_load_z',           r => r.servo_load_z ?? null],
+  ['servo_temp_x',           r => r.servo_temp_x ?? null],
+  ['servo_temp_y',           r => r.servo_temp_y ?? null],
+  ['servo_temp_z',           r => r.servo_temp_z ?? null],
+  ['encoder_temp_x',         r => r.encoder_temp_x ?? null],
+  ['encoder_temp_y',         r => r.encoder_temp_y ?? null],
+  ['encoder_temp_z',         r => r.encoder_temp_z ?? null],
+  ['servo_insulation_res_x', r => r.servo_insulation_res_x ?? null],
+  ['servo_insulation_res_y', r => r.servo_insulation_res_y ?? null],
+  ['servo_insulation_res_z', r => r.servo_insulation_res_z ?? null],
+  ['servo_pulse_x',          r => r.servo_pulse_x ?? null],
+  ['servo_pulse_y',          r => r.servo_pulse_y ?? null],
+  ['servo_pulse_z',          r => r.servo_pulse_z ?? null],
+  ['cnc_battery_voltage',    r => r.cnc_battery_voltage ?? null],
+  ['apc_battery_voltage',    r => r.apc_battery_voltage ?? null],
+  ['sequence_number',        r => r.sequence_number ?? null],
+  // JSONB: serialised here so the driver does not have to guess the type
+  ['fan_status',             r => r.fan_status ? JSON.stringify(r.fan_status) : null],
+  ['extra_axes',             r => r.extra_axes ? JSON.stringify(r.extra_axes) : null]
+];
+
+export const TELEMETRY_COLUMNS = COLUMNS.map(([name]) => name);
+
+/** Values for one row, in COLUMNS order. Exported for tests. */
+export function rowValues(row) {
+  return COLUMNS.map(([, read]) => read(row));
 }
 
 /* ============================
@@ -80,49 +146,21 @@ export async function flushBuffer() {
     while (buffer.length > 0) {
       batch = buffer.splice(0, MAX_BATCH_SIZE);
 
-      const COLS = 21; // + voltage, current, power
+      const COLS = COLUMNS.length;
       const values = [];
       const placeholders = batch.map((r, i) => {
         const base = i * COLS;
-        const normalized = normalizeMachineState(r.machine_status);
-        values.push(
-          r.company_id ?? null,
-          r.plant_id ?? null,
-          r.machine_id ?? null,
-          normalized.machine_status,
-          normalized.alarm,
-          r.status ?? null,
-          r.parts_count ?? null,
-          r.spindle_load ?? null,
-          r.feed_rate ?? null,
-          r.cutting_speed ?? null,
-          r.total_run_time ?? null,
-          r.total_cutting_time ?? null,
-          r.run_time ?? null,
-          r.program_number ?? null,
-          r.device_time ?? null,
-          r.mode ?? null,
-          r.energy ?? null,
-          new Date(),
-          r.voltage ?? null,
-          r.current ?? null,
-          r.power ?? null
-        );
+        values.push(...rowValues(r));
         const cells = [];
         for (let c = 1; c <= COLS; c++) cells.push(`$${base + c}`);
         return `(${cells.join(',')})`;
       });
 
-      await pool.query(`
-        INSERT INTO telemetry_raw (
-          company_id, plant_id, machine_id, machine_status, alarm, status,
-          parts_count, spindle_load, feed_rate, cutting_speed,
-          total_run_time, total_cutting_time, run_time, program_number,
-          device_time, mode, energy, received_at,
-          voltage, current, power
-        )
-        VALUES ${placeholders.join(',')}
-      `, values);
+      await pool.query(
+        `INSERT INTO telemetry_raw (${TELEMETRY_COLUMNS.join(', ')})
+         VALUES ${placeholders.join(',')}`,
+        values
+      );
     }
   } catch (err) {
     log('error', 'telemetry flush error', {

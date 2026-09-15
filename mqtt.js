@@ -5,7 +5,11 @@ import { addToBuffer } from './buffer.js';
 import { setMqttConnected, markMessage, markError } from './health.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
-import { trackAlarm } from './src/lib/alarm-log.js';
+import { trackAlarm, alarmKey } from './src/lib/alarm-log.js';
+import {
+  conditionSignals, isAlarming, controllerIdentity, isDisconnected, focasResult,
+  canonicalPayload, activeAlarms
+} from './src/lib/condition-signals.js';
 
 const machineCache   = new Map();
 const negativeCache  = new Map(); // api_keys that don't exist → avoid DB hammering
@@ -70,12 +74,20 @@ function int(v) {
 /* ===============================
    MACHINE STATUS NORMALIZATION
 ================================ */
-function normalizeMachineState(status) {
-  if (!status) return { machine_status: 'IDLE', alarm: false };
-  const s = String(status).toUpperCase();
-  if (RUN_STATES.has(s))  return { machine_status: 'RUNNING', alarm: false };
-  if (s === 'ALARM')      return { machine_status: 'IDLE',    alarm: true  };
-  return { machine_status: 'IDLE', alarm: false };
+/*
+ * Running/idle comes from the status string, as it always has — twelve
+ * million stored rows are keyed to that behaviour and it is correct.
+ *
+ * The alarm flag does not. Controllers send "STOP" while alarming and
+ * carry the alarm in the FOCAS status flags, so checking the string alone
+ * has recorded zero alarms out of twelve million messages. The full
+ * payload decides it now; the string remains one of the signals.
+ */
+function normalizeMachineState(status, payload) {
+  const s = String(status || '').toUpperCase();
+  const alarm = payload ? isAlarming(payload) : s === 'ALARM';
+  const running = RUN_STATES.has(s);
+  return { machine_status: running ? 'RUNNING' : 'IDLE', alarm };
 }
 
 /* ===============================
@@ -316,6 +328,12 @@ async function handleMessage(apiKey, payload) {
 
   recordMessage(machine.machine_serial_no, payload);
 
+  /* The collector could not reach the controller, and says so. Its other
+     values are whatever it last held, so storing them would record a dead
+     network link as an idle machine. Counted by the logger above, then
+     dropped, so the machine goes OFFLINE through the freshness window. */
+  if (isDisconnected(payload)) return;
+
   const ingressLatencyMs = Date.now() - deviceTime * 1000;
 
   // During the startup replay window (first 10 min after service restart),
@@ -336,7 +354,7 @@ async function handleMessage(apiKey, payload) {
       { machine_id: machine.id, latency_ms: ingressLatencyMs });
   }
 
-  const normalized = normalizeMachineState(payload.machine_status);
+  const normalized = normalizeMachineState(payload.machine_status, payload);
   const mode       = payload.mode || null;
   const energy     = parseEnergy(payload.Energy ?? payload.energy);
 
@@ -403,8 +421,15 @@ async function handleMessage(apiKey, payload) {
      must never be able to slow it down or drop a message. Only state
      transitions are written, so a machine alarming for an hour costs two
      queries rather than one per second. */
+  /* Every alarm active now — a machine can carry several — computed once and
+     kept in the live state, so the next message can tell which codes are new
+     and which cleared. */
+  const alarmsNow  = normalized.alarm ? activeAlarms(payload, { alarming: true }) : [];
+  const alarmCodes = alarmsNow.map(alarmKey);
+
   trackAlarm({
     prev,
+    alarms:    alarmsNow,
     isAlarm:   normalized.alarm,
     companyId: machine.company_id,
     machineId: machine.id,
@@ -436,6 +461,7 @@ async function handleMessage(apiKey, payload) {
     shift_id:       shiftId,
     machine_status: normalized.machine_status,
     alarm:          normalized.alarm,
+    alarm_codes:    alarmCodes,
     mode,
     spindle_load:   payload.spindle_load ?? 0,
     feed_rate:      payload.feed_rate    ?? 0,
@@ -507,8 +533,56 @@ async function handleMessage(apiKey, payload) {
     // electrical, for the energy dashboard
     voltage: num(payload.voltage ?? payload.volts),
     current: num(payload.current ?? payload.amps ?? payload.amperes),
-    power:   num(payload.power   ?? payload.kw)
+    power:   num(payload.power   ?? payload.kw),
+
+    /* Machine condition — Screen 2's gauges. Each axis is independently
+       nullable, because on some controllers only one servo reports a
+       temperature and a missing sensor must not read as 0 °C. */
+    ...conditionSignals(payload)
   });
+
+  /* The controller's own identity describes the machine, not the moment,
+     so it is written to `machines` rather than to 450,000 rows a day.
+     Fire-and-forget and rate-limited: telemetry ingestion is the product
+     and must never wait on bookkeeping. */
+  const identity = controllerIdentity(payload);
+  const focas    = focasResult(payload);
+  if (identity || focas) {
+    recordControllerIdentity(machine.id, identity, focas).catch(err =>
+      log('error', 'controller identity write failed',
+        { machine_id: machine.id, error: err.message }));
+  }
+}
+
+/* Only write when something actually changed, and at most once an hour per
+   machine. Without both guards this is an UPDATE per message per machine. */
+const identitySeen = new Map();
+
+async function recordControllerIdentity(machineId, identity, focas) {
+  const fingerprint = JSON.stringify([identity, focas]);
+  const last = identitySeen.get(machineId);
+  if (last && last.fingerprint === fingerprint && Date.now() - last.at < 3_600_000) return;
+  /* Marked before the write, not after. If the write fails — migration 021
+     not applied yet, say — this still holds the retry to once an hour per
+     machine, instead of an error log and a failed UPDATE every second. */
+  identitySeen.set(machineId, { fingerprint, at: Date.now() });
+
+  const id = identity || {};
+  await pool.query(
+    `UPDATE machines
+        SET controller_ip      = COALESCE($2, controller_ip),
+            cnc_series         = COALESCE($3, cnc_series),
+            cnc_version        = COALESCE($4, cnc_version),
+            cnc_type           = COALESCE($5, cnc_type),
+            cnc_machine_type   = COALESCE($6, cnc_machine_type),
+            controlled_axes    = COALESCE($7, controlled_axes),
+            focas_result       = COALESCE($8::jsonb, focas_result),
+            controller_seen_at = NOW()
+      WHERE id = $1`,
+    [machineId, id.controller_ip ?? null, id.cnc_series ?? null, id.cnc_version ?? null,
+     id.cnc_type ?? null, id.cnc_machine_type ?? null, id.controlled_axes ?? null,
+     focas ? JSON.stringify(focas) : null]
+  );
 }
 
 /* ===============================
@@ -567,7 +641,11 @@ export async function startMQTT() {
     const apiKey = parts[1];
     if (!apiKey) return;
 
-    const payload = safeParse(message);
+    /* Keys lower-cased before anything reads them — including the `time`
+       check below. Collectors in the field already disagree on case
+       (encoder_temperatures vs Encoder_temperature), and a key read with
+       the wrong case is silently dropped. */
+    const payload = canonicalPayload(safeParse(message));
     if (!payload || !payload.time) return;
 
     markMessage();
