@@ -6,6 +6,7 @@ import { setMqttConnected, markMessage, markError } from './health.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
 import { trackAlarm, alarmKey } from './src/lib/alarm-log.js';
+import { createIdentityWriter } from './src/lib/controller-identity.js';
 import {
   conditionSignals, isAlarming, controllerIdentity, isDisconnected, focasResult,
   canonicalPayload, activeAlarms
@@ -554,36 +555,9 @@ async function handleMessage(apiKey, payload) {
   }
 }
 
-/* Only write when something actually changed, and at most once an hour per
-   machine. Without both guards this is an UPDATE per message per machine. */
-const identitySeen = new Map();
-
-async function recordControllerIdentity(machineId, identity, focas) {
-  const fingerprint = JSON.stringify([identity, focas]);
-  const last = identitySeen.get(machineId);
-  if (last && last.fingerprint === fingerprint && Date.now() - last.at < 3_600_000) return;
-  /* Marked before the write, not after. If the write fails — migration 021
-     not applied yet, say — this still holds the retry to once an hour per
-     machine, instead of an error log and a failed UPDATE every second. */
-  identitySeen.set(machineId, { fingerprint, at: Date.now() });
-
-  const id = identity || {};
-  await pool.query(
-    `UPDATE machines
-        SET controller_ip      = COALESCE($2, controller_ip),
-            cnc_series         = COALESCE($3, cnc_series),
-            cnc_version        = COALESCE($4, cnc_version),
-            cnc_type           = COALESCE($5, cnc_type),
-            cnc_machine_type   = COALESCE($6, cnc_machine_type),
-            controlled_axes    = COALESCE($7, controlled_axes),
-            focas_result       = COALESCE($8::jsonb, focas_result),
-            controller_seen_at = NOW()
-      WHERE id = $1`,
-    [machineId, id.controller_ip ?? null, id.cnc_series ?? null, id.cnc_version ?? null,
-     id.cnc_type ?? null, id.cnc_machine_type ?? null, id.controlled_axes ?? null,
-     focas ? JSON.stringify(focas) : null]
-  );
-}
+/* Identity writes: rate-limited per machine, and switched off with one clear
+   log line if the ingestion user may not UPDATE machines. */
+const recordControllerIdentity = createIdentityWriter({ pool, log });
 
 /* ===============================
    START MQTT SERVICE

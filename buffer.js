@@ -38,21 +38,57 @@ function log(level, msg, meta = {}) {
  */
 const RUN_STATES = new Set(['RUN', 'RUNNING', 'CUTTING']);
 
+/*
+ * Integer columns reject a value outside their range, and Postgres rejects
+ * the whole multi-row INSERT with it — every machine's rows, not just the one
+ * that sent the bad value. On 2026-09-15 a single machine sent 42279658848 for
+ * an INTEGER column and no telemetry was written for any machine.
+ *
+ * A value that does not fit is stored as NULL and logged with the machine and
+ * column, so the device can be fixed without the plant losing data meanwhile.
+ */
+const INT2 = [-32768, 32767];
+const INT4 = [-2147483648, 2147483647];
+const INT8 = [-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER];
+
+const rangeWarned = new Map();   // `${machine}:${column}` -> last warning, ms
+
+function ranged(column, [min, max], read) {
+  return row => {
+    const v = read(row);
+    if (v === null || v === undefined || v === '') return null;
+    const n = typeof v === 'number' ? v : Number(v);
+    const t = Number.isFinite(n) ? Math.trunc(n) : NaN;
+    if (Number.isFinite(t) && t >= min && t <= max) return t;
+
+    // at most once per machine and column every ten minutes
+    const key = `${row?.machine_id}:${column}`;
+    const now = Date.now();
+    if (!rangeWarned.has(key) || now - rangeWarned.get(key) > 600_000) {
+      rangeWarned.set(key, now);
+      log('warn', 'telemetry value out of range for its column — stored as NULL', {
+        machine_id: row?.machine_id, column, value: String(v).slice(0, 40), range: [min, max]
+      });
+    }
+    return null;
+  };
+}
+
 const COLUMNS = [
   ['company_id',             r => r.company_id ?? null],
   ['plant_id',               r => r.plant_id ?? null],
   ['machine_id',             r => r.machine_id ?? null],
   ['machine_status',         r => RUN_STATES.has(String(r.machine_status || '').toUpperCase()) ? 'RUNNING' : 'IDLE'],
   ['alarm',                  r => r.alarm === true],
-  ['status',                 r => r.status ?? null],
-  ['parts_count',            r => r.parts_count ?? null],
+  ['status',                 ranged('status', INT2, r => r.status)],
+  ['parts_count',            ranged('parts_count', INT4, r => r.parts_count)],
   ['spindle_load',           r => r.spindle_load ?? null],
   ['feed_rate',              r => r.feed_rate ?? null],
   ['cutting_speed',          r => r.cutting_speed ?? null],
-  ['total_run_time',         r => r.total_run_time ?? null],
-  ['total_cutting_time',     r => r.total_cutting_time ?? null],
-  ['run_time',               r => r.run_time ?? null],
-  ['program_number',         r => r.program_number ?? null],
+  ['total_run_time',         ranged('total_run_time', INT8, r => r.total_run_time)],
+  ['total_cutting_time',     ranged('total_cutting_time', INT8, r => r.total_cutting_time)],
+  ['run_time',               ranged('run_time', INT4, r => r.run_time)],
+  ['program_number',         ranged('program_number', INT4, r => r.program_number)],
   ['device_time',            r => r.device_time ?? null],
   ['mode',                   r => r.mode ?? null],
   ['energy',                 r => r.energy ?? null],
@@ -62,7 +98,7 @@ const COLUMNS = [
   ['power',                  r => r.power ?? null],
 
   // machine condition (migration 021)
-  ['spindle_speed',          r => r.spindle_speed ?? null],
+  ['spindle_speed',          ranged('spindle_speed', INT4, r => r.spindle_speed)],
   ['spindle_motor_temp',     r => r.spindle_motor_temp ?? null],
   ['spindle_insulation_res', r => r.spindle_insulation_res ?? null],
   ['servo_load_x',           r => r.servo_load_x ?? null],
@@ -82,7 +118,7 @@ const COLUMNS = [
   ['servo_pulse_z',          r => r.servo_pulse_z ?? null],
   ['cnc_battery_voltage',    r => r.cnc_battery_voltage ?? null],
   ['apc_battery_voltage',    r => r.apc_battery_voltage ?? null],
-  ['sequence_number',        r => r.sequence_number ?? null],
+  ['sequence_number',        ranged('sequence_number', INT4, r => r.sequence_number)],
   // JSONB: serialised here so the driver does not have to guess the type
   ['fan_status',             r => r.fan_status ? JSON.stringify(r.fan_status) : null],
   ['extra_axes',             r => r.extra_axes ? JSON.stringify(r.extra_axes) : null]
@@ -134,6 +170,66 @@ export function getBufferStats() {
 /* ============================
    FLUSH
 ============================ */
+/** One multi-row INSERT for `rows`, columns in COLUMNS order. */
+async function insertRows(rows) {
+  const COLS = COLUMNS.length;
+  const values = [];
+  const placeholders = rows.map((r, i) => {
+    const base = i * COLS;
+    values.push(...rowValues(r));
+    const cells = [];
+    for (let c = 1; c <= COLS; c++) cells.push(`$${base + c}`);
+    return `(${cells.join(',')})`;
+  });
+
+  await pool.query(
+    `INSERT INTO telemetry_raw (${TELEMETRY_COLUMNS.join(', ')})
+     VALUES ${placeholders.join(',')}`,
+    values
+  );
+}
+
+/*
+ * SQLSTATE class 22 (data exception: out of range, invalid text) and 23
+ * (integrity: not-null, check) mean a *row* is bad and will be rejected
+ * however often it is retried. Anything else — a dropped connection, a
+ * timeout — is worth retrying the whole batch for.
+ */
+export function isDataError(err) {
+  return !!err && typeof err.code === 'string' && (err.code.startsWith('22') || err.code.startsWith('23'));
+}
+
+/*
+ * The database refused the batch because of the data in it. Requeueing it
+ * — what this used to do — retries the same poisoned rows forever, and every
+ * new row joins that batch, so nothing is written again for any machine.
+ * Row by row instead: the good rows are written, the bad ones are logged with
+ * enough to find the sender, and dropped.
+ */
+async function insertEachRow(rows, cause) {
+  log('warn', 'batch rejected by the database; inserting row by row to isolate the bad row', {
+    error: cause.message, batchSize: rows.length
+  });
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      await insertRows([rows[i]]);
+    } catch (err) {
+      if (!isDataError(err)) {
+        err.unwritten = rows.slice(i);
+        throw err;
+      }
+      droppedTotal++;
+      const r = rows[i];
+      log('error', 'dropped a telemetry row the database rejected', {
+        machine_id: r.machine_id, device_time: r.device_time, error: err.message,
+        values: { status: r.status, parts_count: r.parts_count, run_time: r.run_time,
+                  program_number: r.program_number, spindle_speed: r.spindle_speed,
+                  sequence_number: r.sequence_number }
+      });
+    }
+  }
+}
+
 /* Exported so tests can flush deterministically instead of waiting on the
    one-second timer. Production still drives it from the loop below. */
 export async function flushBuffer() {
@@ -146,21 +242,19 @@ export async function flushBuffer() {
     while (buffer.length > 0) {
       batch = buffer.splice(0, MAX_BATCH_SIZE);
 
-      const COLS = COLUMNS.length;
-      const values = [];
-      const placeholders = batch.map((r, i) => {
-        const base = i * COLS;
-        values.push(...rowValues(r));
-        const cells = [];
-        for (let c = 1; c <= COLS; c++) cells.push(`$${base + c}`);
-        return `(${cells.join(',')})`;
-      });
-
-      await pool.query(
-        `INSERT INTO telemetry_raw (${TELEMETRY_COLUMNS.join(', ')})
-         VALUES ${placeholders.join(',')}`,
-        values
-      );
+      try {
+        await insertRows(batch);
+      } catch (err) {
+        // connection trouble: fall through to the requeue below, as before
+        if (!isDataError(err)) throw err;
+        try {
+          await insertEachRow(batch, err);
+        } catch (inner) {
+          // the connection failed part-way: requeue only what was not written
+          if (inner.unwritten) batch = inner.unwritten;
+          throw inner;
+        }
+      }
     }
   } catch (err) {
     log('error', 'telemetry flush error', {
