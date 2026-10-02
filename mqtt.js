@@ -5,6 +5,7 @@ import { addToBuffer } from './buffer.js';
 import { setMqttConnected, markMessage, markError } from './health.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
+import { energyStep } from './src/lib/energy-step.js';
 import { trackAlarm, alarmKey } from './src/lib/alarm-log.js';
 import { createIdentityWriter } from './src/lib/controller-identity.js';
 import {
@@ -406,10 +407,13 @@ async function handleMessage(apiKey, payload) {
     ? partsDelta(prevPartsCount, partsCount, gapSeconds)
     : 0;
 
-  let energyDelta = null;
-  if (energy !== null && prev?.energy != null) {
-    energyDelta = Math.max(0, energy - prev.energy);
-  }
+  /* Compared with the last real meter reading, kept in the live state, so a
+     dropped read (0) or a misread cannot book the whole meter total as one
+     step — see src/lib/energy-step.js. */
+  const energyLast = prev?.energy_meter != null
+    ? { meter: prev.energy_meter, at: prev.energy_meter_at }
+    : null;
+  const { delta: energyDelta, last: energyNow } = energyStep(energyLast, energy, deviceTime);
 
   const energyBaseKey = `machine:${machine.id}:energy_start:${shiftId}`;
   const energyBase    = await redis.get(energyBaseKey);
@@ -469,6 +473,8 @@ async function handleMessage(apiKey, payload) {
     parts_count:    partsCount,
     cutting_speed:  payload.cutting_speed ?? 0,
     energy,
+    energy_meter:    energyNow?.meter ?? null,
+    energy_meter_at: energyNow?.at ?? null,
     received_at:    deviceTime,
     last_runtime_flush_at: deviceTime
   };
