@@ -6,7 +6,8 @@ import { setMqttConnected, markMessage, markError } from './health.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
 import { energyStep } from './src/lib/energy-step.js';
-import { powerSignals } from './src/lib/power-signals.js';
+import { powerSignals, meterReading } from './src/lib/power-signals.js';
+import { createMeterWriter } from './src/lib/meter-writer.js';
 import { trackAlarm, alarmKey } from './src/lib/alarm-log.js';
 import { createIdentityWriter } from './src/lib/controller-identity.js';
 import {
@@ -552,11 +553,25 @@ async function handleMessage(apiKey, payload) {
       log('error', 'controller identity write failed',
         { machine_id: machine.id, error: err.message }));
   }
+
+  /* The energy meter's whole reading — phases, power factor, frequency,
+     demand, import/export — beside the four values telemetry_raw keeps.
+     Fire-and-forget and at most every 15 s per machine, for the same reason. */
+  const reading = meterReading(payload);
+  if (reading) {
+    recordMeterReading({ machineId: machine.id, companyId: machine.company_id, at: deviceTime, reading })
+      .catch(err => log('error', 'energy meter reading write failed',
+        { machine_id: machine.id, error: err.message }));
+  }
 }
 
 /* Identity writes: rate-limited per machine, and switched off with one clear
    log line if the ingestion user may not UPDATE machines. */
 const recordControllerIdentity = createIdentityWriter({ pool, log });
+
+/* Meter readings: one row per machine every 15 s at most, switched off with
+   one clear log line until migration 029 has run and the user may write. */
+const recordMeterReading = createMeterWriter({ pool, log });
 
 /* ===============================
    START MQTT SERVICE

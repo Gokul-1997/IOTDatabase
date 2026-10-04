@@ -5,7 +5,7 @@
  * (the meter's current transformers face the wrong way); kept as sent.
  */
 
-import { powerSignals } from '../src/lib/power-signals.js';
+import { powerSignals, meterReading, METER_FIELDS } from '../src/lib/power-signals.js';
 
 const PowerData = {
   Voltage_V1N: 241.35000610351562, Voltage_V2N: 240.5399932861328, Voltage_V3N: 239.88999938964844,
@@ -15,10 +15,20 @@ const PowerData = {
   Current_I1: 1.090000033378601, Current_I2: 1.4600000381469727, Current_I3: 1.184000015258789,
   Average_Current: 1.24399995803833,
   kW1: -0.1845848262310028, kW2: -0.2698122560977936, kW3: -0.2759864628314972,
-  Average_PF: -0.8360000252723694, Frequency: 49.95800018310547,
+  kVAr1: -0.18744347989559174, kVAr2: -0.22479908168315887, kVAr3: -0.06711475551128387,
+  kVA1: 0.2630715072154999, kVA2: 0.35118839144706726, kVA3: 0.2840297818183899,
+  PF1: -0.7016000151634216, PF2: -0.7681999802589417, PF3: -0.9715999960899353, Average_PF: -0.8360000252723694,
+  Frequency: 49.95800018310547,
   Total_kW: -0.7303835153579712, Total_kVAr: -0.4793573021888733, Total_kVA: 0.898289680480957,
-  Import_Active_Energy_kWh: 33.099998474121094, Export_Active_Energy_kWh: 77.5,
-  Total_Active_Energy_kWh: 110.80000305175781,
+  Active_Power_Max_Demand: 0.09415600448846817, Active_Power_Min_Demand: -2.204396963119507,
+  Reactive_Power_Max_Demand: 0, Reactive_Power_Min_Demand: -2.183621883392334,
+  Apparent_Power_Max_Demand: 3.139817714691162,
+  Maximum_Voltage_V1N: 244.0399932861328, Maximum_Voltage_V2N: 243.1699981689453, Maximum_Voltage_V3N: 242.2899932861328,
+  Maximum_Voltage_V12: 422.760009765625, Maximum_Voltage_V23: 420.489990234375, Maximum_Voltage_V31: 419.9700012207031,
+  Maximum_Current_I1: 14.970000267028809, Maximum_Current_I2: 15.154000282287598, Maximum_Current_I3: 14.880000114440918,
+  Import_Active_Energy_kWh: 33.099998474121094, Export_Active_Energy_kWh: 77.5, Total_Active_Energy_kWh: 110.80000305175781,
+  Import_Reactive_Energy_kVArh: 0.699999988079071, Export_Reactive_Energy_kVArh: 107, Total_Reactive_Energy_kVArh: 107.9000015258789,
+  Total_Apparent_Energy_kVAh: 158.1999969482422,
   Run_Hour: 116.30999755859375, Auxiliary_Interrupts: 5
 };
 
@@ -94,5 +104,50 @@ describe('powerSignals — nothing to read', () => {
 
   test('not a payload at all', () => {
     expect(powerSignals(null)).toEqual({ energy: null, voltage: null, current: null, power: null });
+  });
+});
+
+describe('meterReading — the whole block, for energy_meter_readings', () => {
+  test('VMC - 1 - F: all 52 values land in their columns', () => {
+    const r = meterReading(sample);
+    expect(Object.keys(r)).toEqual(METER_FIELDS.map(([c]) => c));
+    expect(Object.values(r).every(v => v !== null)).toBe(true);
+    expect(r).toMatchObject({
+      v1n: 241.35000610351562, v_ln_avg: 240.58999633789062, v12: 418.05999755859375, v_ll_avg: 416.7300109863281,
+      i1: 1.090000033378601, i_avg: 1.24399995803833,
+      kw_total: -0.7303835153579712, kvar_total: -0.4793573021888733, kva_total: 0.898289680480957,
+      pf_avg: -0.8360000252723694, frequency_hz: 49.95800018310547,
+      kw_demand_max: 0.09415600448846817, kva_demand_max: 3.139817714691162,
+      v1n_max: 244.0399932861328, i2_max: 15.154000282287598,
+      kwh_import: 33.099998474121094, kwh_export: 77.5, kwh_total: 110.80000305175781,
+      kvarh_export: 107, kvah_total: 158.1999969482422, run_hours: 116.30999755859375, aux_interrupts: 5
+    });
+  });
+
+  test('a demand of 0 is a reading', () => {
+    expect(meterReading(sample).kvar_demand_max).toBe(0);
+  });
+
+  test('every column reads a different key', () => {
+    expect(new Set(METER_FIELDS.map(([, k]) => k)).size).toBe(METER_FIELDS.length);
+    expect(new Set(METER_FIELDS.map(([c]) => c)).size).toBe(METER_FIELDS.length);
+  });
+
+  test('a partial block keeps what it has and leaves the rest empty', () => {
+    const r = meterReading({ PowerData: { Total_kW: 5.5, Frequency: '50.01', Auxiliary_Interrupts: 7.9 } });
+    expect(r.kw_total).toBe(5.5);
+    expect(r.frequency_hz).toBe(50.01);
+    expect(r.aux_interrupts).toBe(7);
+    expect(r.v1n).toBeNull();
+  });
+
+  test.each([
+    ['no meter', { machine_status: 'RUN' }],
+    ['only the flat contract keys', { energy: 12.5, voltage: 415 }],
+    ['an empty block', { PowerData: {} }],
+    ['nothing readable', { PowerData: { Total_kW: 'x' } }],
+    ['not a payload', null]
+  ])('%s → null, so nothing is written', (_label, payload) => {
+    expect(meterReading(payload)).toBeNull();
   });
 });
