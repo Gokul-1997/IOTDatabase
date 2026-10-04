@@ -25,6 +25,10 @@ describe('parseEnergy', () => {
     ['12.5kWh', 12.5],     // strips units
     [' 7.0 ',   7.0],
     [42,        42],
+    [110.80000305175781, 110.80000305175781],   // the meter's number, as VMC - 1 - F sends it now
+    [3.6e-7,    3.6e-7],   // not "3.6e-7" → "3.67" once the "e-" is stripped
+    [NaN,       null],
+    [Infinity,  null],
     [null,      null],
     [undefined, null],
     ['abc',     null],

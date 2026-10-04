@@ -15,6 +15,9 @@ export function normalizeMachineState(status) {
 
 export function parseEnergy(val) {
   if (val == null) return null;
+  // A number is taken as it is: turned into text first, 3.6e-7 would lose
+  // its "e-" below and read as 3.67.
+  if (typeof val === 'number') return Number.isFinite(val) ? val : null;
   const str = String(val).trim().replace(',', '.');
   const n   = parseFloat(str.replace(/[^0-9.]/g, ''));
   return Number.isNaN(n) ? null : n;

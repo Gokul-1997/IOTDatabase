@@ -6,6 +6,7 @@ import { setMqttConnected, markMessage, markError } from './health.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
 import { energyStep } from './src/lib/energy-step.js';
+import { powerSignals } from './src/lib/power-signals.js';
 import { trackAlarm, alarmKey } from './src/lib/alarm-log.js';
 import { createIdentityWriter } from './src/lib/controller-identity.js';
 import {
@@ -41,16 +42,6 @@ function log(level, msg, meta = {}) {
   if (level === 'error')      console.error(out);
   else if (level === 'warn')  console.warn(out);
   else                        console.log(out);
-}
-
-/* ===============================
-   ENERGY PARSER
-================================ */
-function parseEnergy(val) {
-  if (val == null) return null;
-  const str = String(val).trim().replace(',', '.');
-  const n   = parseFloat(str.replace(/[^0-9.]/g, ''));
-  return isNaN(n) ? null : n;
 }
 
 /* ===============================
@@ -358,7 +349,9 @@ async function handleMessage(apiKey, payload) {
 
   const normalized = normalizeMachineState(payload.machine_status, payload);
   const mode       = payload.mode || null;
-  const energy     = parseEnergy(payload.Energy ?? payload.energy);
+  // the energy meter: PowerData block or the contract's flat keys
+  const meter      = powerSignals(payload);
+  const energy     = meter.energy;
 
   const lastKey = `machine:${machine.id}:last_time`;
   const liveKey = `machine:${machine.id}:live`;
@@ -538,9 +531,9 @@ async function handleMessage(apiKey, payload) {
     run_time:           int(payload.run_time),
 
     // electrical, for the energy dashboard
-    voltage: num(payload.voltage ?? payload.volts),
-    current: num(payload.current ?? payload.amps ?? payload.amperes),
-    power:   num(payload.power   ?? payload.kw),
+    voltage: meter.voltage,
+    current: meter.current,
+    power:   meter.power,
 
     /* Machine condition — Screen 2's gauges. Each axis is independently
        nullable, because on some controllers only one servo reports a
