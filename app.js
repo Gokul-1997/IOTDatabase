@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 dotenv.config(); // load env FIRST
 
 import path from 'path';
-import { startMQTT, stopMQTT, initIngest } from './mqtt.js';
+import { startMQTT, stopMQTT, initIngest, ingressLag } from './mqtt.js';
 import { startHealthServer, setSources } from './health.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
@@ -59,7 +59,7 @@ async function startServer() {
     log('info', 'writer started', { collector_id: collectorId, checkpoint, waiting_from_last_run: recovered });
 
     initIngest({ journal, shifts });
-    setSources({ journal, flusher });
+    setSources({ journal, flusher, lag: ingressLag });
     startHealthServer();
     await startMQTT();
 

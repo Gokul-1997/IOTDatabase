@@ -1,6 +1,7 @@
 import http from 'http';
 import { pool } from './db.js';
 import { redis } from './redis.js';
+import { lagMetricLines } from './src/lib/ingress-lag.js';
 
 /* ===============================
    /health    → liveness + readiness
@@ -18,7 +19,7 @@ const outcomes = {
   accepted: 0, late_stale: 0, late_out_of_order: 0, duplicate: 0, unknown_machine: 0,
   invalid: 0, disconnected: 0, journal_refused: 0, redis_degraded: 0
 };
-let sources = { journal: null, flusher: null };
+let sources = { journal: null, flusher: null, lag: null };
 
 export function setMqttConnected(state) { mqttConnected = !!state; }
 export function markMessage()           { messagesTotal++; lastMessageAt = Date.now(); }
@@ -26,17 +27,26 @@ export function markError()             { errorsTotal++; }
 export function count(outcome)          { outcomes[outcome] = (outcomes[outcome] || 0) + 1; }
 export function setSources(next)        { sources = { ...sources, ...next }; }
 
+/* A ping that cannot answer within 2 s counts as down. Without the limit,
+   /health and /metrics hung for as long as Redis was unreachable (its client
+   holds commands while it reconnects), so monitoring saw no answer at all
+   instead of "redis: false". */
+const PING_LIMIT_MS = 2000;
+function within(ms, promise) {
+  let timer;
+  const timeout = new Promise(resolve => { timer = setTimeout(resolve, ms, false); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function pingDb() {
   try {
-    const r = await pool.query('SELECT 1 AS ok');
-    return r.rows[0].ok === 1;
+    return await within(PING_LIMIT_MS, pool.query('SELECT 1 AS ok').then(r => r.rows[0].ok === 1));
   } catch { return false; }
 }
 
 async function pingRedis() {
   try {
-    const r = await redis.ping();
-    return r === 'PONG';
+    return await within(PING_LIMIT_MS, redis.ping().then(r => r === 'PONG'));
   } catch { return false; }
 }
 
@@ -45,6 +55,7 @@ async function buildHealth() {
   const msSinceMessage = lastMessageAt ? Date.now() - lastMessageAt : null;
   const journal = sources.journal?.stats() ?? null;
   const writer  = sources.flusher?.stats() ?? null;
+  const lag     = sources.lag?.snapshot() ?? null;
 
   // healthy = connected to all three, and the writer is keeping up
   const healthy = db && rd && mqttConnected && (writer ? writer.db_ok : true);
@@ -57,6 +68,7 @@ async function buildHealth() {
     redis: { connected: rd },
     journal,
     writer,
+    ingress_lag: lag,
     outcomes,
     counters: { messages_total: messagesTotal, errors_total: errorsTotal }
   };
@@ -91,6 +103,7 @@ function metricsText(h) {
     `pms_writer_retries_total ${h.writer.retries}`,
     `pms_writer_last_batch_ms ${h.writer.last_batch_ms}`,
     `pms_writer_max_batch_ms ${h.writer.max_batch_ms}`);
+  if (h.ingress_lag) lines.push(...lagMetricLines(h.ingress_lag));
   return lines.join('\n') + '\n';
 }
 

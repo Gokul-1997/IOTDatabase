@@ -10,6 +10,7 @@ import { powerSignals, meterReading } from './src/lib/power-signals.js';
 import { createMeterWriter } from './src/lib/meter-writer.js';
 import { trackAlarm, alarmKey } from './src/lib/alarm-log.js';
 import { createIdentityWriter } from './src/lib/controller-identity.js';
+import { createLagTracker } from './src/lib/ingress-lag.js';
 import {
   conditionSignals, isAlarming, controllerIdentity, isDisconnected, focasResult,
   canonicalPayload, activeAlarms
@@ -26,6 +27,10 @@ const RUN_STATES    = new Set(['RUN', 'RUNNING', 'CUTTING']);
 let journal = null;
 let shifts  = null;
 export function initIngest(deps) { journal = deps.journal; shifts = deps.shifts; }
+
+/* How far behind each gateway's readings arrive: one log line a minute while
+   any machine is over 10 s, and the latest lag per machine on /metrics. */
+export const ingressLag = createLagTracker({ log });
 
 // Track service start time so broker-replayed messages arriving right after
 // a restart are not dropped by the stale-message filter.
@@ -254,6 +259,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
 
   const receivedAt = new Date(receivedAtMs).toISOString();
   const ingressLatencyMs = receivedAtMs - deviceTime * 1000;
+  ingressLag.observe(machine.id, ingressLatencyMs);
 
   // During the startup replay window (first 10 min after a restart) messages
   // up to 24 h old are taken as live data, so what the broker queued while
@@ -264,10 +270,6 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   if (ingressLatencyMs > MAX_STALE_MS) {
     keepLate(machine, payload, deviceTime, receivedAt, 'stale', ingressLatencyMs);
     return;
-  }
-
-  if (ingressLatencyMs > 10_000) {
-    log('warn', 'high ingress latency', { machine_id: machine.id, latency_ms: ingressLatencyMs });
   }
 
   const normalized = normalizeMachineState(payload.machine_status, payload);
