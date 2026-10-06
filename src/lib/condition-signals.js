@@ -1,7 +1,7 @@
 /*
  * Machine condition signals and alarms — reading what the FOCAS collector sends.
  *
- * Built against two real payloads from the embedded team:
+ * Built against three real payloads from the embedded team:
  *
  *   192.168.200.2  3-axis, running. `encoder_temperatures: {}`, every fan
  *                  null, a corrupt `position` block.
@@ -9,8 +9,12 @@
  *                  capital E and no "s", servo temperatures
  *                  {"X":0,"Y":0,"Z":45,"A":0}, and three PMC alarms shaped
  *                  {number, type, axis, message}.
+ *   192.168.200.1  October 2026. Fans as `cnc_fans`, one object per fan
+ *                  {on, fault, rpm}, plus `fan_count`; the battery as a
+ *                  per-axis alarm flag, `battery: {"X":false,...}`, with no
+ *                  voltage.
  *
- * What those two show, and what everything below is built around:
+ * What those show, and what everything below is built around:
  *
  *   - Collectors in the field disagree on key spelling and case, so
  *     top-level keys are matched case-insensitively.
@@ -20,6 +24,8 @@
  *   - A temperature of 0 °C is the controller saying "no sensor". Load,
  *     pulse and resistance keep their zeros.
  *   - A machine can carry several alarms at once, each with its own code.
+ *   - Fans and batteries are states (on, fault, a word, a flag), not
+ *     readings: kept as sent in JSONB, never coerced to a number or string.
  */
 
 /** Parse to a finite number, or null. Never NaN — NaN in a gauge is worse
@@ -101,20 +107,85 @@ export function splitAxes(map, read = num) {
   return out;
 }
 
+/** A yes/no as the controller sends it — true/false, 1/0 or their strings —
+ *  or null for anything else. */
+export function flag(v) {
+  if (typeof v === 'boolean') return v;
+  if (v === 1 || v === 0) return v === 1;
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  if (s === 'true' || s === '1') return true;
+  if (s === 'false' || s === '0') return false;
+  return null;
+}
+
+/* A row is written every second for every machine; a controller that lists
+   a fan or an axis per I/O point must not blow up its size. */
+const MAX_ENTRIES = 16;
+
 /**
- * Fan states, or null when the controller reports none.
+ * One fan: {on, fault, rpm} with only the parts the controller sent, or a
+ * bare number or word kept as sent (the older `fans` form: an rpm, a 1/0,
+ * "OK", "NG"). Null when there is nothing to show.
+ */
+function oneFan(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'object') {
+    const word = String(value).trim().slice(0, 32);
+    return word || null;
+  }
+  if (Array.isArray(value)) return null;
+
+  const fan = {};
+  const on = flag(value.on);
+  const fault = flag(value.fault);
+  const rpm = num(value.rpm);
+  if (on !== null)    fan.on = on;
+  if (fault !== null) fan.fault = fault;
+  if (rpm !== null)   fan.rpm = rpm;
+  return Object.keys(fan).length ? fan : null;
+}
+
+/**
+ * Fan states keyed by the controller's fan name, or null when it reports none.
+ *
+ *   {"CNC_FAN1": {"on": true, "fault": false, "rpm": 10206}}   `cnc_fans`
+ *   {"radiator_fan1": "OK"}                                    older `fans`
  *
  * Null rather than an object of nulls, so the column stays empty until a
- * controller actually has fans to report. Numbers and words ("OK", "NG") are
- * both kept as sent — coercing "OK" to a number would turn it into null.
+ * controller actually has fans to report. A word is never coerced: "OK" as
+ * a number would be null. And an object is never turned into a string — on
+ * 5 Oct 2026 ten minutes of {on, fault, rpm} fans were stored as
+ * "[object Object]".
  */
 export function fanStatus(fans) {
   if (!fans || typeof fans !== 'object' || Array.isArray(fans)) return null;
 
   const out = {};
-  for (const [key, value] of Object.entries(fans)) {
-    if (value === null || value === undefined) continue;
-    out[String(key).slice(0, 64)] = typeof value === 'number' ? value : String(value).slice(0, 32);
+  for (const [key, value] of Object.entries(fans).slice(0, MAX_ENTRIES)) {
+    const name = String(key).trim().slice(0, 64);
+    const fan = oneFan(value);
+    if (name && fan !== null) out[name] = fan;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * The absolute-encoder (APC) battery alarm per axis, or null.
+ *
+ * The collector sends `battery: {"X": false, "Y": false, "Z": false}` — the
+ * battery flag the controller keeps for each axis's absolute encoder. Stored
+ * as sent, true or false per axis: which of the two means "low" is decided
+ * where it is shown, so a wrong guess there costs no stored data.
+ */
+export function batteryStatus(map) {
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
+
+  const out = {};
+  for (const [key, value] of Object.entries(map).slice(0, MAX_ENTRIES)) {
+    const axis = String(key).trim().toUpperCase().slice(0, 8);
+    const state = flag(value);
+    if (axis && state !== null) out[axis] = state;
   }
   return Object.keys(out).length ? out : null;
 }
@@ -325,10 +396,12 @@ export function conditionSignals(payload) {
 
     cnc_battery_voltage: num(p.cnc_battery),
     apc_battery_voltage: num(p.apc_battery),
+    apc_battery_status:  batteryStatus(p.battery),
 
     sequence_number: seq === null ? null : Math.trunc(seq),
 
-    fan_status: fanStatus(p.fans),
+    // `fan_count` is not kept: it is the number of entries in cnc_fans
+    fan_status: fanStatus(p.cnc_fans) ?? fanStatus(p.fans),
     extra_axes: extra
   };
 }

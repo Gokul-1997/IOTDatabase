@@ -43,7 +43,8 @@ test('every column the buffer writes is one the check verifies', async () => {
   // same list the INSERT is built from
   const { TELEMETRY_COLUMNS } = await import('../buffer.js');
   expect(TELEMETRY_COLUMNS).toEqual(expect.arrayContaining([
-    'alarm', 'servo_load_x', 'servo_temp_z', 'encoder_temp_y', 'fan_status', 'extra_axes'
+    'alarm', 'servo_load_x', 'servo_temp_z', 'encoder_temp_y', 'fan_status', 'extra_axes',
+    'apc_battery_status'
   ]));
   expect(new Set(TELEMETRY_COLUMNS).size).toBe(TELEMETRY_COLUMNS.length);
 });

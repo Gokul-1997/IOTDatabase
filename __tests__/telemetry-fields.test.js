@@ -97,7 +97,8 @@ describe('condition signals and the alarm flag', () => {
     servo_temp_x: 27, servo_temp_y: null, servo_temp_z: null,
     servo_pulse_x: 32, sequence_number: 100,
     cnc_battery_voltage: null,
-    fan_status: { radiator_fan1_servo_spindle_amplifier: 'OK' },
+    fan_status: { CNC_FAN1: { on: true, fault: false, rpm: 10206 } },
+    apc_battery_status: { X: false, Y: true, Z: false },
     extra_axes: null
   };
 
@@ -135,7 +136,8 @@ describe('condition signals and the alarm flag', () => {
     await flushBuffer();
     const row = lastInsert();
 
-    expect(JSON.parse(row.fan_status)).toEqual({ radiator_fan1_servo_spindle_amplifier: 'OK' });
+    expect(JSON.parse(row.fan_status)).toEqual({ CNC_FAN1: { on: true, fault: false, rpm: 10206 } });
+    expect(JSON.parse(row.apc_battery_status)).toEqual({ X: false, Y: true, Z: false });
     expect(row.extra_axes).toBeNull();
   });
 

@@ -121,7 +121,9 @@ const COLUMNS = [
   ['sequence_number',        ranged('sequence_number', INT4, r => r.sequence_number)],
   // JSONB: serialised here so the driver does not have to guess the type
   ['fan_status',             r => r.fan_status ? JSON.stringify(r.fan_status) : null],
-  ['extra_axes',             r => r.extra_axes ? JSON.stringify(r.extra_axes) : null]
+  ['extra_axes',             r => r.extra_axes ? JSON.stringify(r.extra_axes) : null],
+  // per-axis battery alarm flags (migration 032)
+  ['apc_battery_status',     r => r.apc_battery_status ? JSON.stringify(r.apc_battery_status) : null]
 ];
 
 export const TELEMETRY_COLUMNS = COLUMNS.map(([name]) => name);

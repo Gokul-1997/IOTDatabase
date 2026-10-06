@@ -8,7 +8,7 @@
  */
 
 import {
-  num, splitAxes, fanStatus, isAlarming, alarmIdentity,
+  num, splitAxes, fanStatus, batteryStatus, flag, isAlarming, alarmIdentity,
   conditionSignals, controllerIdentity, isDisconnected, focasResult,
   canonicalPayload, temperature, activeAlarms
 } from '../src/lib/condition-signals.js';
@@ -172,9 +172,61 @@ describe('fanStatus', () => {
       .toEqual({ radiator_fan1: 'OK', radiator_fan2: 'NG' });
   });
 
+  test('a fan sent as {on, fault, rpm} is kept as one, not as "[object Object]"', () => {
+    // what was stored for ten minutes on 5 Oct 2026, when these came as `fans`
+    const fans = fanStatus({ CNC_FAN1: { on: true, fault: false, rpm: 10206 } });
+    expect(fans).toEqual({ CNC_FAN1: { on: true, fault: false, rpm: 10206 } });
+    expect(JSON.stringify(fans)).not.toMatch(/object Object/);
+  });
+
+  test('only the parts a fan reports are kept; flags and speeds sent as strings are read', () => {
+    expect(fanStatus({ F1: { fault: 'true' }, F2: { on: '0', rpm: '0' }, F3: { rpm: 'n/a' } }))
+      .toEqual({ F1: { fault: true }, F2: { on: false, rpm: 0 } });
+  });
+
+  test('a fan with nothing readable, or a list, is left out', () => {
+    expect(fanStatus({ F1: {}, F2: [1, 2], F3: { speed: 900 }, F4: '  ' })).toBeNull();
+  });
+
+  test('a stopped fan keeps its zero rpm — a dead fan is a reading', () => {
+    expect(fanStatus({ F1: { on: false, fault: true, rpm: 0 } })).toEqual({ F1: { on: false, fault: true, rpm: 0 } });
+  });
+
+  test('a controller listing hundreds of fans cannot grow a row without bound', () => {
+    const many = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`F${i}`, { rpm: i }]));
+    expect(Object.keys(fanStatus(many))).toHaveLength(16);
+  });
+
   test.each([null, undefined, [], 'fans'])('non-object %p is null', bad => {
     expect(fanStatus(bad)).toBeNull();
   });
+});
+
+describe('batteryStatus', () => {
+  test('keeps the per-axis flags as sent', () => {
+    expect(batteryStatus({ X: false, Y: true, Z: false })).toEqual({ X: false, Y: true, Z: false });
+  });
+
+  test('axis keys are trimmed and upper-cased; 1/0 and strings are read as flags', () => {
+    expect(batteryStatus({ ' x ': 0, y: '1', A: 'false' })).toEqual({ X: false, Y: true, A: false });
+  });
+
+  test('a value that is not a flag is left out, not guessed', () => {
+    expect(batteryStatus({ X: 'LOW', Y: 3.1, Z: null })).toBeNull();
+  });
+
+  test.each([null, undefined, [], false, 'ok'])('non-object %p is null', bad => {
+    expect(batteryStatus(bad)).toBeNull();
+  });
+});
+
+describe('flag', () => {
+  test.each([[true, true], [1, true], ['1', true], [' TRUE ', true],
+             [false, false], [0, false], ['0', false], ['false', false],
+             [null, null], [undefined, null], [2, null], ['yes', null], [{}, null]])
+    ('%p reads as %p', (input, expected) => {
+      expect(flag(input)).toBe(expected);
+    });
 });
 
 describe('isAlarming — the fix for zero alarms in twelve million messages', () => {
@@ -363,6 +415,71 @@ describe('second sample — 192.168.200.3, 4-axis, alarming', () => {
       controller_ip: '192.168.200.3', cnc_series: null, cnc_version: null,
       cnc_type: null, cnc_machine_type: null, controlled_axes: null
     });
+  });
+});
+
+/*
+ * The third sample: 192.168.200.1 (VMC - 2 - F), 5 Oct 2026. Fans now come
+ * as `cnc_fans`, one object per fan, with `fan_count`; the battery as one
+ * flag per axis. Exactly as the embedded team sent it, PowerData trimmed —
+ * the meter on this machine was not wired yet.
+ */
+const sample3 = {
+  machine_ip: '192.168.200.1', connection: true, machine_status: 'CUTTING', status: 3, mode: 'EDIT',
+  feed_rate: 65, spindle_speed: 850, spindle_load: 3, parts_count: 19, part_change: 0,
+  total_run_time: 10807, total_cutting_time: 60324471, run_time: 382,
+  program_number: 27, program_path: '//CNC_MEM/USER/RANA/O27', job_name: 'DIA20X45DEG CH',
+  position: {
+    X: { absolute: 45.96, machine: 230.86, relative: 45.96, distance: 0 },
+    Z: { absolute: -68.962, machine: -249.762, relative: 205.938, distance: -6.038 }
+  },
+  servo_axis_load_percent: { X: 4, Y: 7, Z: 25 },
+  servo_motor_temperature: { X: 0, Y: 0, Z: 42 },
+  Encoder_temperature: { X: 31, Y: 34, Z: 43 },
+  cnc_fans: {
+    CNC_FAN1: { on: true, fault: false, rpm: 10206 },
+    CNC_FAN2: { on: true, fault: false, rpm: 10213 }
+  },
+  pmc_alarm: { exist: 0, count: 0, alarms: [] },
+  time: 1791224590,
+  spindle_motor_temperature: 51,
+  fan_count: 2,
+  battery: { X: false, Y: false, Z: false },
+  PowerData: { Voltage_V1N: 247.96, Total_kW: 0.0127, Total_Active_Energy_kWh: 0.35 },
+  Energy: 0.35
+};
+
+describe('third sample — 192.168.200.1, cnc_fans and battery flags', () => {
+  const s = conditionSignals(sample3);
+
+  test('each fan is stored with its on, fault and rpm', () => {
+    expect(s.fan_status).toEqual({
+      CNC_FAN1: { on: true, fault: false, rpm: 10206 },
+      CNC_FAN2: { on: true, fault: false, rpm: 10213 }
+    });
+  });
+
+  test('fan_count is not stored: it is the number of fans listed', () => {
+    expect(JSON.stringify(s)).not.toMatch(/fan_count/);
+  });
+
+  test('the battery is one flag per axis, and there is no voltage to invent', () => {
+    expect(s.apc_battery_status).toEqual({ X: false, Y: false, Z: false });
+    expect(s.cnc_battery_voltage).toBeNull();
+    expect(s.apc_battery_voltage).toBeNull();
+  });
+
+  test('cnc_fans wins over an older `fans` sent alongside it', () => {
+    expect(conditionSignals({ ...sample3, fans: { old: 'OK' } }).fan_status).toHaveProperty('CNC_FAN1');
+    expect(conditionSignals({ fans: { old: 'OK' } }).fan_status).toEqual({ old: 'OK' });
+  });
+
+  test('the readings are unchanged: zero servo temperatures are no sensor', () => {
+    expect([s.servo_temp_x, s.servo_temp_y, s.servo_temp_z]).toEqual([null, null, 42]);
+    expect([s.encoder_temp_x, s.encoder_temp_y, s.encoder_temp_z]).toEqual([31, 34, 43]);
+    expect([s.servo_load_x, s.servo_load_y, s.servo_load_z]).toEqual([4, 7, 25]);
+    expect(s.spindle_motor_temp).toBe(51);
+    expect(isAlarming(sample3)).toBe(false);
   });
 });
 
