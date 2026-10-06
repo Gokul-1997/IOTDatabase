@@ -30,3 +30,14 @@ export async function missingTelemetryColumns(pool, columns) {
   const have = new Set(rows.map(r => r.column_name));
   return columns.filter(c => !have.has(c));
 }
+
+/** Tables in `tables` that do not exist on the search path. */
+export async function missingTables(pool, tables) {
+  const { rows } = await pool.query(
+    `SELECT table_name FROM information_schema.tables
+      WHERE table_schema = ANY (current_schemas(false)) AND table_name = ANY ($1)`,
+    [tables]
+  );
+  const have = new Set(rows.map(r => r.table_name));
+  return tables.filter(t => !have.has(t));
+}

@@ -1,8 +1,8 @@
 import mqtt from 'mqtt';
 import { pool } from './db.js';
 import { redis } from './redis.js';
-import { addToBuffer } from './buffer.js';
-import { setMqttConnected, markMessage, markError } from './health.js';
+import { setMqttConnected, markMessage, markError, count } from './health.js';
+import { hourlySlices } from './src/lib/hourly.js';
 import { recordMessage, startMqttLogger } from './mqtt-logger.js';
 import { partsDelta } from './src/lib/parts-delta.js';
 import { energyStep } from './src/lib/energy-step.js';
@@ -17,11 +17,15 @@ import {
 
 const machineCache   = new Map();
 const negativeCache  = new Map(); // api_keys that don't exist → avoid DB hammering
-const shiftCache     = new Map();
 const messageIdCache = new Map();
 
 const RUN_STATES    = new Set(['RUN', 'RUNNING', 'CUTTING']);
-const MANUAL_STATES = new Set(['MANUAL', 'SETUP']);
+
+/* Set by app.js before startMQTT(): the journal every accepted reading is
+   written to, and the in-memory shift calendar. */
+let journal = null;
+let shifts  = null;
+export function initIngest(deps) { journal = deps.journal; shifts = deps.shifts; }
 
 // Track service start time so broker-replayed messages arriving right after
 // a restart are not dropped by the stale-message filter.
@@ -182,113 +186,32 @@ function safeParse(message) {
 }
 
 /* ===============================
-   SHIFT CACHE
+   LATE AND OUT-OF-ORDER READINGS
+
+   Kept, not dropped. A reading more than five minutes behind the server
+   clock, or older than one already processed for the machine, cannot go
+   into the live state or the hourly totals without corrupting them — the
+   live state would step back in time and the interval would be counted
+   twice. It used to be discarded without a trace, so a gateway publishing
+   late looked exactly like a plant switched off. It now goes to
+   telemetry_late with the reason, through the same journal, and is counted
+   on /metrics.
 ================================ */
-async function getShiftId(companyId, deviceTime) {
-  const timeBucket = Math.floor(deviceTime / 60);
-  const cacheKey   = `${companyId}:${timeBucket}`;
+const lateWarned = new Map();   // machine_id -> last warning, ms
 
-  const cached = shiftCache.get(cacheKey);
-  if (cached && cached.timestamp > Date.now() - 300_000) return cached.shiftId;
-
-  if (shiftCache.size > 1000) {
-    const now = Date.now();
-    for (const [key, val] of shiftCache) {
-      if (val.timestamp < now - 600_000) shiftCache.delete(key);
-    }
-  }
-
-  const { rows } = await pool.query(`
-    SELECT id
-    FROM shifts
-    WHERE company_id = $1
-      AND is_active = true
-      AND (
-        (start_time <= end_time AND
-         (to_timestamp($2) AT TIME ZONE 'Asia/Kolkata')::time BETWEEN start_time AND end_time)
-        OR
-        (start_time > end_time AND (
-           (to_timestamp($2) AT TIME ZONE 'Asia/Kolkata')::time >= start_time
-           OR
-           (to_timestamp($2) AT TIME ZONE 'Asia/Kolkata')::time <= end_time
-        ))
-      )
-    LIMIT 1
-  `, [companyId, deviceTime]);
-
-  const shiftId = rows?.[0]?.id || null;
-  shiftCache.set(cacheKey, { shiftId, timestamp: Date.now() });
-  return shiftId;
-}
-
-/* ===============================
-   HOURLY PRODUCTION  (OFF hot path)
-   Fire-and-forget from message handler
-================================ */
-async function updateHourlyProduction(task) {
-  const {
-    machineId, companyId, prevStatus, prevMode,
-    producedDelta, fromTime, toTime, energyDelta
-  } = task;
-
-  if (!fromTime || !toTime || toTime <= fromTime) return;
-
-  const totalDuration = toTime - fromTime;
-  let start = fromTime;
-
-  while (start < toTime) {
-    const hourStart = Math.floor(start / 3600) * 3600;
-    const nextHour  = hourStart + 3600;
-    const end       = Math.min(toTime, nextHour);
-    const diffSec   = end - start;
-
-    let run = 0, idle = 0, manual = 0;
-    const statusUpper = String(prevStatus || '').toUpperCase();
-    const modeUpper   = String(prevMode   || '').toUpperCase();
-
-    if (RUN_STATES.has(statusUpper)) run = diffSec; else idle = diffSec;
-    if (MANUAL_STATES.has(modeUpper)) manual = diffSec;
-
-    const fraction     = totalDuration > 0 ? diffSec / totalDuration : 1;
-    const energyBucket = energyDelta != null
-      ? Number((energyDelta * fraction).toFixed(4))
-      : 0;
-
-    const shiftId = await getShiftId(companyId, start);
-    if (!shiftId) { start = end; continue; }
-
-    await pool.query(`
-      INSERT INTO production_hourly
-        (company_id, machine_id, shift_id, hour_start, run_seconds, idle_seconds, manual_seconds, produced_qty, energy_kwh)
-      VALUES ($1,$2,$3,
-        (date_trunc('hour', to_timestamp($4) AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'),
-        $5,$6,$7,$8,$9)
-      ON CONFLICT (machine_id, shift_id, hour_start)
-      DO UPDATE SET
-        run_seconds    = production_hourly.run_seconds    + EXCLUDED.run_seconds,
-        idle_seconds   = production_hourly.idle_seconds   + EXCLUDED.idle_seconds,
-        manual_seconds = production_hourly.manual_seconds + EXCLUDED.manual_seconds,
-        produced_qty   = production_hourly.produced_qty   + EXCLUDED.produced_qty,
-        energy_kwh     = production_hourly.energy_kwh     + EXCLUDED.energy_kwh
-    `, [companyId, machineId, shiftId, start, run, idle, manual, producedDelta, energyBucket]);
-
-    start = end;
-  }
-}
-
-/* Simple queue so hourly writes don't pile up in parallel per machine */
-const hourlyQueues = new Map();
-function enqueueHourly(task) {
-  const key  = task.machineId;
-  const prev = hourlyQueues.get(key) || Promise.resolve();
-  const next = prev
-    .then(() => updateHourlyProduction(task))
-    .catch(err => log('error', 'hourly update failed',
-      { machine_id: key, error: err.message }))
-    .finally(() => {
-      if (hourlyQueues.get(key) === next) hourlyQueues.delete(key);
+function keepLate(machine, payload, deviceTime, receivedAt, reason, latencyMs) {
+  const seq = journal.append({ l: {
+    machine_id: machine.id, company_id: machine.company_id, device_time: deviceTime,
+    received_at: receivedAt, reason, payload
+  } });
+  count(seq ? `late_${reason}` : 'journal_refused');
+  const now = Date.now();
+  if (now - (lateWarned.get(machine.id) || 0) > 60_000) {
+    lateWarned.set(machine.id, now);
+    log('warn', 'reading kept in telemetry_late, not in live data', {
+      machine_id: machine.id, reason, device_time: deviceTime, latency_ms: latencyMs
     });
-  hourlyQueues.set(key, next);
+  }
 }
 
 /* ===============================
@@ -306,46 +229,45 @@ function runSerial(machineId, fn) {
 
 /* ===============================
    CORE MESSAGE HANDLER
+
+   Accepted = written to the journal. From there the writer puts the
+   telemetry row and the hourly production it adds into the database in one
+   transaction. Live state (Redis) is updated here, as before.
 ================================ */
-async function handleMessage(apiKey, payload) {
+async function handleMessage(apiKey, payload, receivedAtMs) {
   const machine = await lookupMachine(apiKey);
-  if (!machine) {
-    // negative-cached; do not log per-message to avoid spam
-    return;
-  }
+  if (!machine) { count('unknown_machine'); return; }   // negative-cached; not logged per message
 
   const deviceTime = Number(payload.time);
-  if (!deviceTime) return;
+  if (!deviceTime) { count('invalid'); return; }
 
   const dedupKey = getDedupKey(apiKey, payload);
-  if (isDuplicate(dedupKey)) return;
+  if (isDuplicate(dedupKey)) { count('duplicate'); return; }
 
   recordMessage(machine.machine_serial_no, payload);
 
   /* The collector could not reach the controller, and says so. Its other
      values are whatever it last held, so storing them would record a dead
-     network link as an idle machine. Counted by the logger above, then
-     dropped, so the machine goes OFFLINE through the freshness window. */
-  if (isDisconnected(payload)) return;
+     network link as an idle machine. Counted, then dropped, so the machine
+     goes OFFLINE through the freshness window. */
+  if (isDisconnected(payload)) { count('disconnected'); return; }
 
-  const ingressLatencyMs = Date.now() - deviceTime * 1000;
+  const receivedAt = new Date(receivedAtMs).toISOString();
+  const ingressLatencyMs = receivedAtMs - deviceTime * 1000;
 
-  // During the startup replay window (first 10 min after service restart),
-  // allow messages up to 24h old so the broker can replay all QoS-1 messages
-  // that were queued while the service was down. Outside that window, reject
-  // anything older than 5 minutes — those are genuinely stale.
+  // During the startup replay window (first 10 min after a restart) messages
+  // up to 24 h old are taken as live data, so what the broker queued while
+  // the service was down lands normally. Otherwise > 5 min late is too late
+  // for live data and the hourly totals — it is kept in telemetry_late.
   const isStartupReplay = (Date.now() - SERVICE_START_MS) < STARTUP_REPLAY_WINDOW_MS;
   const MAX_STALE_MS    = isStartupReplay ? STARTUP_MAX_STALE_MS : 5 * 60 * 1000;
   if (ingressLatencyMs > MAX_STALE_MS) {
-    log('warn', 'dropping stale message',
-      { machine_id: machine.id, latency_ms: ingressLatencyMs, device_time: deviceTime,
-        startup_replay: isStartupReplay });
+    keepLate(machine, payload, deviceTime, receivedAt, 'stale', ingressLatencyMs);
     return;
   }
 
   if (ingressLatencyMs > 10_000) {
-    log('warn', 'high ingress latency',
-      { machine_id: machine.id, latency_ms: ingressLatencyMs });
+    log('warn', 'high ingress latency', { machine_id: machine.id, latency_ms: ingressLatencyMs });
   }
 
   const normalized = normalizeMachineState(payload.machine_status, payload);
@@ -357,14 +279,26 @@ async function handleMessage(apiKey, payload) {
   const lastKey = `machine:${machine.id}:last_time`;
   const liveKey = `machine:${machine.id}:live`;
 
-  const lastTime = await redis.get(lastKey);
-  if (lastTime && deviceTime <= Number(lastTime)) return;
+  /* Redis holds the live state the deltas are worked out from. If it cannot
+     be reached the reading is still stored; only the live screen, the hourly
+     totals and alarm tracking wait for it to come back. */
+  let redisOk = true;
+  let prev = null;
+  try {
+    const [lastTime, prevRaw] = await Promise.all([redis.get(lastKey), redis.get(liveKey)]);
+    if (lastTime && deviceTime <= Number(lastTime)) {
+      keepLate(machine, payload, deviceTime, receivedAt, 'out_of_order', ingressLatencyMs);
+      return;
+    }
+    prev = prevRaw ? JSON.parse(prevRaw) : null;
+  } catch (err) {
+    redisOk = false;
+    count('redis_degraded');
+  }
 
-  const shiftId = await getShiftId(machine.company_id, deviceTime);
-  if (!shiftId) return;
-
-  const prevRaw = await redis.get(liveKey);
-  const prev    = prevRaw ? JSON.parse(prevRaw) : null;
+  // null outside every shift: the reading is still stored and shown live;
+  // only production_hourly, which is per shift, has nothing to add
+  const shiftId = shifts.shiftFor(machine.company_id, deviceTime);
 
   const partsCount = Number(payload.parts_count ?? 0);
 
@@ -374,12 +308,13 @@ async function handleMessage(apiKey, payload) {
   let prevReceivedAt  = prev?.received_at ?? null; // epoch seconds from Redis
   let gapSeconds      = 0;
 
-  if (prevPartsCount == null) {
+  if (redisOk && prevPartsCount == null) {
     try {
       const { rows: fallback } = await pool.query(
         `SELECT parts_count, EXTRACT(EPOCH FROM received_at)::bigint AS received_epoch
          FROM telemetry_raw
          WHERE machine_id = $1 AND received_at < to_timestamp($2)
+           AND received_at > to_timestamp($2) - interval '7 days'
          ORDER BY received_at DESC LIMIT 1`,
         [machine.id, deviceTime]
       );
@@ -409,105 +344,99 @@ async function handleMessage(apiKey, payload) {
     : null;
   const { delta: energyDelta, last: energyNow } = energyStep(energyLast, energy, deviceTime);
 
-  const energyBaseKey = `machine:${machine.id}:energy_start:${shiftId}`;
-  const energyBase    = await redis.get(energyBaseKey);
-  if (energyBase === null && energy !== null) {
-    await redis.set(energyBaseKey, String(energy));
-  }
-
-  /* Record alarm periods. Fire-and-forget for the same reason the hourly
-     rollup is: telemetry ingestion is the product, and a derived record
-     must never be able to slow it down or drop a message. Only state
-     transitions are written, so a machine alarming for an hour costs two
-     queries rather than one per second. */
   /* Every alarm active now — a machine can carry several — computed once and
      kept in the live state, so the next message can tell which codes are new
-     and which cleared. */
+     and which cleared. Recorded fire-and-forget: only state transitions are
+     written, so a machine alarming for an hour costs two queries. */
   const alarmsNow  = normalized.alarm ? activeAlarms(payload, { alarming: true }) : [];
   const alarmCodes = alarmsNow.map(alarmKey);
 
-  trackAlarm({
-    prev,
-    alarms:    alarmsNow,
-    isAlarm:   normalized.alarm,
-    companyId: machine.company_id,
-    machineId: machine.id,
-    shiftId,
-    payload,
-    deviceTime
-  }).catch(err => log('error', 'alarm tracking failed',
-    { machine_id: machine.id, error: err.message }));
-
-  // 🔥 Offload hourly production — DO NOT block ingestion
-  if (prev && prev.received_at) {
-    enqueueHourly({
-      machineId:     machine.id,
-      plantId:       machine.plant_id,
-      companyId:     machine.company_id,
-      prevStatus:    prev.machine_status,
-      prevMode:      prev.mode,
-      producedDelta,
-      fromTime:      prev.received_at,
-      toTime:        deviceTime,
-      energyDelta
-    });
+  if (redisOk) {
+    trackAlarm({
+      prev,
+      alarms:    alarmsNow,
+      isAlarm:   normalized.alarm,
+      companyId: machine.company_id,
+      machineId: machine.id,
+      shiftId,
+      payload,
+      deviceTime
+    }).catch(err => log('error', 'alarm tracking failed',
+      { machine_id: machine.id, error: err.message }));
   }
 
-  const livePayload = {
-    machine_id:     machine.id,
-    plant_id:       machine.plant_id,
-    company_id:     machine.company_id,
-    shift_id:       shiftId,
-    machine_status: normalized.machine_status,
-    alarm:          normalized.alarm,
-    alarm_codes:    alarmCodes,
-    mode,
-    spindle_load:   payload.spindle_load ?? 0,
-    feed_rate:      payload.feed_rate    ?? 0,
-    parts_count:    partsCount,
-    cutting_speed:  payload.cutting_speed ?? 0,
-    energy,
-    energy_meter:    energyNow?.meter ?? null,
-    energy_meter_at: energyNow?.at ?? null,
-    received_at:    deviceTime,
-    last_runtime_flush_at: deviceTime
-  };
+  /* The time since the machine's previous reading, credited to the state it
+     was in then — written with the telemetry row, in the same transaction. */
+  const slices = (redisOk && prev && prev.received_at)
+    ? hourlySlices({
+        companyId:  machine.company_id,
+        machineId:  machine.id,
+        prevStatus: prev.machine_status,
+        prevMode:   prev.mode,
+        from:       Number(prev.received_at),
+        to:         deviceTime,
+        produced:   producedDelta,
+        energy:     energyDelta,
+        shifts:     shifts.shiftsOf(machine.company_id)
+      })
+    : [];
 
-  await redis.multi()
-    .setEx(lastKey, 300, String(deviceTime))
-    .setEx(liveKey, 300, JSON.stringify(livePayload))
-    .publish('machine_updates', JSON.stringify({
+  if (redisOk) {
+    const livePayload = {
       machine_id:     machine.id,
       plant_id:       machine.plant_id,
       company_id:     machine.company_id,
+      shift_id:       shiftId,
       machine_status: normalized.machine_status,
       alarm:          normalized.alarm,
+      alarm_codes:    alarmCodes,
       mode,
       spindle_load:   payload.spindle_load ?? 0,
       feed_rate:      payload.feed_rate    ?? 0,
       parts_count:    partsCount,
       cutting_speed:  payload.cutting_speed ?? 0,
       energy,
-      received_at:    Math.floor(Date.now() / 1000)  // server ingestion time (not device clock)
-    }))
-    .exec();
+      energy_meter:    energyNow?.meter ?? null,
+      energy_meter_at: energyNow?.at ?? null,
+      received_at:    deviceTime
+    };
+    try {
+      await redis.multi()
+        .setEx(lastKey, 300, String(deviceTime))
+        .setEx(liveKey, 300, JSON.stringify(livePayload))
+        .publish('machine_updates', JSON.stringify({
+          machine_id:     machine.id,
+          plant_id:       machine.plant_id,
+          company_id:     machine.company_id,
+          machine_status: normalized.machine_status,
+          alarm:          normalized.alarm,
+          mode,
+          spindle_load:   payload.spindle_load ?? 0,
+          feed_rate:      payload.feed_rate    ?? 0,
+          parts_count:    partsCount,
+          cutting_speed:  payload.cutting_speed ?? 0,
+          energy,
+          received_at:    Math.floor(Date.now() / 1000)  // server ingestion time (not device clock)
+        }))
+        .exec();
+    } catch (err) {
+      count('redis_degraded');
+    }
+  }
 
   /*
    * Everything telemetry_raw can hold.
    *
    * Four of these — program_number, total_run_time, total_cutting_time and
    * run_time — are columns that already existed and were already in the
-   * INSERT, but were never passed here, so buffer.js wrote NULL for them on
-   * every one of the ~450,000 rows a day. A device sending them had them
-   * silently discarded, which made "the device does not send it" and "we
-   * throw it away" indistinguishable from the database.
+   * INSERT, but were never passed here, so the buffer wrote NULL for them on
+   * every one of the ~450,000 rows a day.
    *
    * Names are accepted in more than one spelling where controllers differ.
    * A field the devices do not send yet costs nothing: it arrives as null
-   * today and lands the moment the firmware starts including it, with no
-   * change here.
+   * today and lands the moment the firmware starts including it.
    */
-  addToBuffer({
+  const row = {
     plant_id:       machine.plant_id,
     company_id:     machine.company_id,
     machine_id:     machine.id,
@@ -521,6 +450,7 @@ async function handleMessage(apiKey, payload) {
     energy,
     status:         payload.status ?? null,
     device_time:    payload.time,
+    received_at:    receivedAt,
 
     // running program on the controller — lets the app warn before a
     // transfer overwrites the program an operator is mid-way through
@@ -540,7 +470,9 @@ async function handleMessage(apiKey, payload) {
        nullable, because on some controllers only one servo reports a
        temperature and a missing sensor must not read as 0 °C. */
     ...conditionSignals(payload)
-  });
+  };
+
+  count(journal.append({ r: row, h: slices }) ? 'accepted' : 'journal_refused');
 
   /* The controller's own identity describes the machine, not the moment,
      so it is written to `machines` rather than to 450,000 rows a day.
@@ -576,6 +508,8 @@ const recordMeterReading = createMeterWriter({ pool, log });
 /* ===============================
    START MQTT SERVICE
 ================================ */
+let client = null;
+
 export async function startMQTT() {
   await preloadMachines();
   startMqttLogger();
@@ -592,7 +526,7 @@ export async function startMQTT() {
     process.env.MQTT_CLIENT_ID ||
     `pms-ingest-${process.env.NODE_APP_INSTANCE || '0'}`;
 
-  const client = mqtt.connect(process.env.MQTT_URL, {
+  client = mqtt.connect(process.env.MQTT_URL, {
     clientId,
     clean:             false,
     reconnectPeriod:   2000,
@@ -625,6 +559,7 @@ export async function startMQTT() {
   client.on('error',     (err) => { markError(); log('error', 'mqtt error', { error: err.message }); });
 
   client.on('message', (topic, message) => {
+    const receivedAtMs = Date.now();   // when it arrived, before any waiting
     const parts  = topic.split('/');
     const apiKey = parts[1];
     if (!apiKey) return;
@@ -634,13 +569,27 @@ export async function startMQTT() {
        (encoder_temperatures vs Encoder_temperature), and a key read with
        the wrong case is silently dropped. */
     const payload = canonicalPayload(safeParse(message));
-    if (!payload || !payload.time) return;
+    if (!payload || !payload.time) { count('invalid'); return; }
 
     markMessage();
 
     // serialize per machine; handler still runs concurrently across machines
-    runSerial(apiKey, () => handleMessage(apiKey, payload))
+    runSerial(apiKey, () => handleMessage(apiKey, payload, receivedAtMs))
       .catch(err => { markError(); log('error', 'handler error',
         { api_key: apiKey, error: err.message }); });
   });
+}
+
+/**
+ * Stop taking messages and let the ones already being handled finish, so
+ * everything acknowledged is in the journal before the service exits. The
+ * broker keeps what arrives meanwhile (persistent session) for the next start.
+ */
+export async function stopMQTT(timeoutMs = 3000) {
+  if (client) {
+    await new Promise(resolve => client.end(false, {}, resolve));
+    setMqttConnected(false);
+  }
+  const pending = Promise.allSettled([...MACHINE_LOCKS.values()]);
+  await Promise.race([pending, new Promise(r => setTimeout(r, timeoutMs))]);
 }

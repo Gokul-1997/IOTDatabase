@@ -1,2 +1,5 @@
 /node_modules
 .env
+# the collector journal (JOURNAL_DIR defaults to ./data/journal) and pm2 logs
+/data
+/logs

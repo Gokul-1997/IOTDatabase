@@ -14,11 +14,21 @@
  */
 
 import { jest } from '@jest/globals';
+import { telemetryInsert } from '../buffer.js';
 
-const query = jest.fn(async () => ({ rows: [], rowCount: 1 }));
-jest.unstable_mockModule('../db.js', () => ({ pool: { query } }));
-
-const { addToBuffer, flushBuffer } = await import("../buffer.js");
+/* The statement the writer runs for a batch (src/lib/flusher.js uses
+   telemetryInsert), captured as query(sql, params) calls in 1000-row
+   batches, as the writer sends them. */
+const query = jest.fn();
+let pending = [];
+const addToBuffer = row => { pending.push(row); };
+async function flushBuffer() {
+  for (let i = 0; i < pending.length; i += 1000) {
+    const { text, values } = telemetryInsert(pending.slice(i, i + 1000));
+    query(text, values);
+  }
+  pending = [];
+}
 
 /** The columns the INSERT names, in order. */
 function insertColumns(sql) {

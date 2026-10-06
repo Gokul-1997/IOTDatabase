@@ -1,7 +1,6 @@
 import http from 'http';
 import { pool } from './db.js';
 import { redis } from './redis.js';
-import { getBufferStats } from './buffer.js';
 
 /* ===============================
    /health    → liveness + readiness
@@ -13,9 +12,19 @@ let lastMessageAt = 0;
 let messagesTotal = 0;
 let errorsTotal   = 0;
 
+/* What happened to every message: accepted, or why not. Nothing is dropped
+   without being counted here. */
+const outcomes = {
+  accepted: 0, late_stale: 0, late_out_of_order: 0, duplicate: 0, unknown_machine: 0,
+  invalid: 0, disconnected: 0, journal_refused: 0, redis_degraded: 0
+};
+let sources = { journal: null, flusher: null };
+
 export function setMqttConnected(state) { mqttConnected = !!state; }
 export function markMessage()           { messagesTotal++; lastMessageAt = Date.now(); }
 export function markError()             { errorsTotal++; }
+export function count(outcome)          { outcomes[outcome] = (outcomes[outcome] || 0) + 1; }
+export function setSources(next)        { sources = { ...sources, ...next }; }
 
 async function pingDb() {
   try {
@@ -33,10 +42,12 @@ async function pingRedis() {
 
 async function buildHealth() {
   const [db, rd] = await Promise.all([pingDb(), pingRedis()]);
-  const buf = getBufferStats();
   const msSinceMessage = lastMessageAt ? Date.now() - lastMessageAt : null;
+  const journal = sources.journal?.stats() ?? null;
+  const writer  = sources.flusher?.stats() ?? null;
 
-  const healthy = db && rd && mqttConnected;
+  // healthy = connected to all three, and the writer is keeping up
+  const healthy = db && rd && mqttConnected && (writer ? writer.db_ok : true);
 
   return {
     status: healthy ? 'ok' : 'degraded',
@@ -44,7 +55,9 @@ async function buildHealth() {
     mqtt: { connected: mqttConnected, last_message_ms_ago: msSinceMessage },
     db:    { connected: db, pool: { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount } },
     redis: { connected: rd },
-    buffer: buf,
+    journal,
+    writer,
+    outcomes,
     counters: { messages_total: messagesTotal, errors_total: errorsTotal }
   };
 }
@@ -60,11 +73,24 @@ function metricsText(h) {
     `pms_db_pool_idle ${h.db.pool.idle}`,
     `pms_db_pool_waiting ${h.db.pool.waiting}`,
     `pms_redis_connected ${h.redis.connected ? 1 : 0}`,
-    `pms_buffer_size ${h.buffer.size}`,
-    `pms_buffer_dropped_total ${h.buffer.droppedTotal}`,
     `pms_messages_total ${h.counters.messages_total}`,
     `pms_errors_total ${h.counters.errors_total}`,
+    ...Object.entries(h.outcomes).map(([k, v]) => `pms_messages_${k}_total ${v}`),
   ];
+  if (h.journal) lines.push(
+    `pms_journal_pending ${h.journal.pending}`,
+    `pms_journal_bytes ${h.journal.bytes}`,
+    `pms_journal_segments ${h.journal.segments}`,
+    `pms_journal_refused_total ${h.journal.refused}`);
+  if (h.writer) lines.push(
+    `pms_writer_db_ok ${h.writer.db_ok ? 1 : 0}`,
+    `pms_writer_rows_total ${h.writer.rows_written}`,
+    `pms_writer_late_rows_total ${h.writer.late_written}`,
+    `pms_writer_hourly_upserts_total ${h.writer.hourly_upserts}`,
+    `pms_writer_bad_records_total ${h.writer.bad_records}`,
+    `pms_writer_retries_total ${h.writer.retries}`,
+    `pms_writer_last_batch_ms ${h.writer.last_batch_ms}`,
+    `pms_writer_max_batch_ms ${h.writer.max_batch_ms}`);
   return lines.join('\n') + '\n';
 }
 

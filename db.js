@@ -10,7 +10,7 @@ export const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  max: 30,                         // 50 machines + hourly workers + runtime-flush + API reads
+  max: 30,                         // the writer (1), alarm / meter / identity writes, fallback reads
   min: 4,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,

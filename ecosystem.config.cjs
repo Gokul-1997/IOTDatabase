@@ -10,8 +10,8 @@ module.exports = {
       exec_mode:    'fork',
 
       // ── Memory guard ──────────────────────────────────────
-      // MQTT ingest holds an in-memory buffer (up to 50k rows).
-      // Restart if RSS exceeds 400 MB — prevents OOM kill.
+      // Readings wait in the on-disk journal, not in memory; ~100 MB RSS at
+      // 100 msg/s. Restart if RSS exceeds 400 MB — prevents OOM kill.
       max_memory_restart: '400M',
 
       // ── Restart strategy ──────────────────────────────────
@@ -22,7 +22,7 @@ module.exports = {
       exp_backoff_restart_delay: 200, // doubles each retry: 5s, 10s, 20s …
 
       // ── Shutdown ──────────────────────────────────────────
-      kill_timeout:    8000,  // 8s for graceful MQTT disconnect + buffer flush
+      kill_timeout:    8000,  // 8 s: stop intake, sync the journal, write what is waiting
       listen_timeout: 10000,
 
       // ── Logs ──────────────────────────────────────────────

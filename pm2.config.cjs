@@ -16,7 +16,9 @@ module.exports = {
       instances:   1,
       exec_mode:   'fork',
       max_memory_restart: '500M',
-      kill_timeout: 5000,
+      // time to stop intake, sync the journal and write what is waiting
+      // (app.js gives itself SHUTDOWN_TIMEOUT_MS = 7000)
+      kill_timeout: 8000,
       env: {
         NODE_ENV: 'development'
       },
