@@ -18,7 +18,7 @@ const quiet = () => {};
  * failure part-way through a batch leaves nothing behind — as Postgres does.
  */
 function fakeDb() {
-  const db = { telemetry: [], late: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, queries: 0 };
+  const db = { telemetry: [], late: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, queries: 0, loseCommitReply: false };
   db.pool = {
     async query(sql, params) {
       if (db.down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
@@ -37,7 +37,17 @@ function fakeDb() {
           if (db.down) throw Object.assign(new Error('Connection terminated'), { code: '57P01' });
           if (sql === 'BEGIN') { staged = []; return {}; }
           if (sql === 'ROLLBACK') { staged = []; return {}; }
-          if (sql === 'COMMIT') { for (const f of staged) f(); staged = []; return {}; }
+          if (sql === 'COMMIT') {
+            for (const f of staged) f(); staged = [];
+            if (db.loseCommitReply) {
+              db.loseCommitReply = false;
+              throw Object.assign(new Error('COMMIT response lost'), { code: 'ECONNRESET' });
+            }
+            return {};
+          }
+          if (/SELECT last_seq FROM ingest_checkpoint/.test(sql)) {
+            return { rows: [{ last_seq: String(db.checkpoint.get(params[0]) || 0) }] };
+          }
           if (sql.startsWith('INSERT INTO telemetry_raw')) {
             if (db.poison != null && params.includes(db.poison)) throw Object.assign(new Error('value out of range'), { code: '22003' });
             const cols = sql.slice(sql.indexOf('(') + 1, sql.indexOf(')')).split(',').map(c => c.trim());
@@ -61,6 +71,7 @@ function fakeDb() {
             return {};
           }
           if (sql.includes('INSERT INTO ingest_checkpoint')) {
+            if (sql.includes('DO NOTHING')) return {};
             const [id, seq] = params;
             staged.push(() => db.checkpoint.set(id, Math.max(db.checkpoint.get(id) || 0, seq)));
             return {};
@@ -134,6 +145,31 @@ describe('journal', () => {
 });
 
 describe('writer', () => {
+  test('a lost COMMIT reply is retried without duplicating telemetry or hourly totals', async () => {
+    const { db, journal, flusher } = setup();
+    journal.append(reading(7, 1));
+    db.loseCommitReply = true;
+    await expect(flusher.pass()).rejects.toThrow('COMMIT response lost');
+    expect(db.telemetry).toHaveLength(1);
+    expect(journal.stats().pending).toBe(1);
+    journal.append(reading(7, 2));
+    await drainPasses(flusher);
+    expect(db.telemetry.map(r => r.device_time)).toEqual([1, 2]);
+    expect(db.hourly.get('7|1|1000').run).toBe(2);
+    expect(journal.stats().pending).toBe(0);
+    journal.close();
+  });
+
+  test('a failed batch does not count rolled-back writes in writer metrics', async () => {
+    const { db, journal, flusher } = setup();
+    journal.append(reading(1, 1));
+    journal.append(reading(2, 2, { mode: 'POISON' }));
+    db.poison = 'POISON';
+    await drainPasses(flusher);
+    expect(flusher.stats().rows_written).toBe(1);
+    expect(flusher.stats().hourly_upserts).toBe(1);
+    journal.close();
+  });
   test('everything appended is written once, rows and hourly totals in the same transaction', async () => {
     const { db, journal, flusher } = setup();
     await flusher.start(); await flusher.stop();

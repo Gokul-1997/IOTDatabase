@@ -10,10 +10,11 @@
  * Then it tells the journal it may free that space.
  *
  * A crash after the commit but before the journal hears about it replays the
- * batch on restart, and the checkpoint makes the replay skip it — so rows are
+ * batch on restart, and the locked checkpoint makes the replay skip it — so rows are
  * not written twice and hourly totals are not added twice. A database outage
  * just stops the passes; the journal keeps everything and the writer retries
- * with a growing pause (0.5 s up to 15 s).
+ * with a growing pause (0.5 s up to 15 s). Every transaction rechecks that
+ * checkpoint, including when COMMIT succeeded but its response was lost.
  *
  * A batch the database refuses for its *data* (SQLSTATE class 22/23) is
  * written record by record so one bad value cannot hold up every machine
@@ -39,11 +40,12 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
   };
 
   async function writeRecords(client, records) {
+    const written = { rows_written: 0, late_written: 0, hourly_upserts: 0 };
     const rows = records.filter(r => r.r).map(r => r.r);
     if (rows.length) {
       const { text, values } = telemetryInsert(rows);
       await client.query(text, values);
-      stats.rows_written += rows.length;
+      written.rows_written = rows.length;
     }
 
     const late = records.filter(r => r.l).map(r => r.l);
@@ -54,7 +56,7 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
         [late.map(l => l.machine_id), late.map(l => l.company_id ?? null), late.map(l => l.device_time ?? null),
          late.map(l => l.received_at), late.map(l => l.reason), late.map(l => JSON.stringify(l.payload ?? null))]
       );
-      stats.late_written += late.length;
+      written.late_written = late.length;
     }
 
     const hourly = sumSlices(records.flatMap(r => r.h || []));
@@ -75,8 +77,9 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
          hourly.map(h => h.hour_start), hourly.map(h => Math.round(h.run)), hourly.map(h => Math.round(h.idle)),
          hourly.map(h => Math.round(h.manual)), hourly.map(h => Math.round(h.produced)), hourly.map(h => h.energy || 0)]
       );
-      stats.hourly_upserts += hourly.length;
+      written.hourly_upserts = hourly.length;
     }
+    return written;
   }
 
   async function commitCheckpoint(client, seq) {
@@ -90,32 +93,48 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
   /** One transaction: the records and the checkpoint, or nothing. */
   async function applyTx(records, { skipData = false } = {}) {
     const client = await pool.connect();
+    let releaseError;
     try {
       await client.query('BEGIN');
-      if (!skipData) await writeRecords(client, records);
-      await commitCheckpoint(client, records.at(-1).s);
+      // Seed before locking: concurrent first writes serialize on this key too.
+      await client.query(
+        `INSERT INTO ingest_checkpoint (collector_id, last_seq) VALUES ($1, 0)
+         ON CONFLICT (collector_id) DO NOTHING`, [collectorId]
+      );
+      const { rows } = await client.query(
+        'SELECT last_seq FROM ingest_checkpoint WHERE collector_id = $1 FOR UPDATE', [collectorId]
+      );
+      const durable = Number(rows[0]?.last_seq);
+      if (!Number.isSafeInteger(durable) || durable < 0) throw new Error('Invalid ingest checkpoint');
+      const fresh = records.filter(record => record.s > durable);
+      const written = !skipData && fresh.length ? await writeRecords(client, fresh) : null;
+      const nextCheckpoint = Math.max(durable, records.at(-1).s);
+      if (fresh.length) await commitCheckpoint(client, nextCheckpoint);
       await client.query('COMMIT');
+      if (written) for (const [key, value] of Object.entries(written)) stats[key] += value;
+      return nextCheckpoint;
     } catch (err) {
-      try { await client.query('ROLLBACK'); } catch { /* connection already gone */ }
+      try { await client.query('ROLLBACK'); } catch { releaseError = err; }
+      // Do not return a connection with an uncertain transaction state to the pool.
+      if (!isDataError(err)) releaseError = err;
       throw err;
     } finally {
-      client.release();
+      client.release(releaseError);
     }
   }
 
   async function applyOneByOne(records) {
     for (const rec of records) {
       try {
-        await applyTx([rec]);
+        checkpoint = Math.max(checkpoint, await applyTx([rec]));
       } catch (err) {
         if (!isDataError(err)) throw err;
         stats.bad_records++;
         log('error', 'dropped a reading the database refused', {
           machine_id: rec.r?.machine_id ?? rec.l?.machine_id, device_time: rec.r?.device_time, error: err.message, seq: rec.s
         });
-        await applyTx([rec], { skipData: true });
+        checkpoint = Math.max(checkpoint, await applyTx([rec], { skipData: true }));
       }
-      checkpoint = rec.s;
     }
   }
 
@@ -127,13 +146,13 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
     if (fresh.length) {
       const t0 = Date.now();
       try {
-        await applyTx(fresh);
+        checkpoint = Math.max(checkpoint, await applyTx(fresh));
       } catch (err) {
         if (!isDataError(err)) throw err;
         log('warn', 'batch refused for its data; writing record by record', { error: err.message, records: fresh.length });
         await applyOneByOne(fresh);
       }
-      checkpoint = fresh.at(-1).s;
+      checkpoint = Math.max(checkpoint, fresh.at(-1).s);
       const ms = Date.now() - t0;
       stats.batches++; stats.last_batch_ms = ms; stats.max_batch_ms = Math.max(stats.max_batch_ms, ms);
       stats.last_commit_at = new Date().toISOString();
