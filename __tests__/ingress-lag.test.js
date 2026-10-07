@@ -39,16 +39,47 @@ test('a gateway 14.5 s behind for two minutes: one line a minute, naming each la
   expect(line.machines[28]).toBeUndefined();     // the machine on time is not named
 });
 
-test('a minute with nobody late logs nothing, and the next late minute starts afresh', () => {
+test('back under the threshold is said once; a machine falling behind later gets its own line', () => {
   const { lag, lines, advance } = setup();
   lag.observe(15, 20_000);
   advance(61_000);
   lag.observe(15, 1_000);                         // closes the first minute: one line
   advance(61_000);
-  lag.observe(15, 1_000);                         // a minute with nobody late: nothing
+  lag.observe(15, 1_000);                         // a minute with nobody late: "on time again"
+  advance(61_000);
+  lag.observe(15, 1_000);                         // and another: nothing more
   advance(61_000);
   lag.observe(16, 45_000);                        // late, and the minute is up: its own line
-  expect(lines.map(l => l.machines)).toEqual([{ 15: 20_000 }, { 16: 45_000 }]);
+  expect(lines.map(l => [l.msg, l.machines])).toEqual([
+    ['readings arriving late', { 15: 20_000 }],
+    ['readings on time again', [15]],
+    ['readings arriving late', { 16: 45_000 }]
+  ]);
+  expect(lines[1].level).toBe('info');
+});
+
+test('a steady lag is logged when it starts and every 15 minutes, not every minute', () => {
+  const { lag, lines, advance } = setup();
+  for (let i = 0; i < 20 * 20; i++) {             // 20 minutes, ten machines every 3 s, 15 s late
+    for (let id = 15; id <= 24; id++) lag.observe(id, 15_000);
+    advance(3_000);
+  }
+  expect(lines).toHaveLength(2);
+  expect(lines.every(l => l.level === 'warn' && Object.keys(l.machines).length === 10)).toBe(true);
+});
+
+test('another machine falling behind, or the lag getting worse, is logged at once; from 2 minutes it is an error', () => {
+  const { lag, lines, advance } = setup();
+  // two minutes per phase, one reading every 3 s from each machine named
+  const phase = (ms, ids) => { for (let i = 0; i < 40; i++) { ids.forEach(id => lag.observe(id, ms)); advance(3_000); } };
+  phase(15_000, [15]);                             // starts: a line; its second minute: nothing
+  phase(15_000, [15, 16]);                         // machine 16 falls behind: a line
+  phase(70_000, [15, 16]);                         // past 60 s: a line
+  phase(130_000, [15, 16]);                        // past 2 minutes: a line, an error
+  lag.observe(15, 130_000);                        // closes the last minute
+  expect(lines.map(l => [l.level, l.worst_ms, Object.keys(l.machines).length])).toEqual([
+    ['warn', 15_000, 1], ['warn', 15_000, 2], ['warn', 70_000, 2], ['error', 130_000, 2]
+  ]);
 });
 
 test('a machine not heard from for 10 minutes drops off /metrics', () => {

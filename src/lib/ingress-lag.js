@@ -7,18 +7,25 @@
  * telemetry_late, so this is the number to alert on
  * (/metrics pms_ingress_lag_max_seconds).
  *
- * In the log: one line a minute naming every machine that was over the
- * threshold and its worst lag, not a line per reading. On 6–7 Oct 2026 the
- * Fanuc gateway ran 11–15 s behind all day, and a line per reading (three a
- * second) buried everything else in the log.
+ * In the log, a line naming every late machine and its worst lag when the
+ * lateness starts, when another machine falls behind, when it gets worse
+ * (past 60 s, 120 s, 240 s — error from 120 s), as a reminder every 15
+ * minutes while it lasts, and once when every machine is back under the
+ * threshold. Not a line per reading (three a second on 6 Oct 2026), and not
+ * the same line every minute: the Fanuc gateway ran a steady 15 s behind for
+ * days, and a minute-by-minute repeat of that read like a fault.
  */
 
 const FORGET_MS = 10 * 60_000;   // a machine not heard from for 10 min drops off /metrics
+// steps towards the 5-minute limit; a lag that crosses one is logged at once
+const STEPS_MS = [60_000, 120_000, 240_000];
 
-export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, limitMs = 5 * 60_000, log, now = Date.now } = {}) {
+export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs = 15 * 60_000, limitMs = 5 * 60_000, log, now = Date.now } = {}) {
   const latest = new Map();   // machine id → { ms, at }
   let late = new Map();       // machine id → { readings, worstMs } since the last summary
   let windowStart = now();
+  let shown = { ids: new Set(), step: 0, at: -Infinity };   // what the last line said
+  const stepOf = ms => STEPS_MS.filter(s => ms > s).length;
 
   function summarize(t) {
     if (late.size) {
@@ -30,10 +37,18 @@ export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, limitMs = 
         readings += m.readings;
         worst = Math.max(worst, m.worstMs);
       }
-      log('warn', 'readings arriving late', {
-        machines, late_readings: readings, worst_ms: worst,
-        threshold_ms: warnMs, limit_ms: limitMs, window_s: Math.round((t - windowStart) / 1000)
-      });
+      const step = stepOf(worst);
+      const newlyLate = [...late.keys()].some(id => !shown.ids.has(id));
+      if (newlyLate || step > shown.step || t - shown.at >= remindMs) {
+        log(step >= 2 ? 'error' : 'warn', 'readings arriving late', {
+          machines, late_readings: readings, worst_ms: worst,
+          threshold_ms: warnMs, limit_ms: limitMs, window_s: Math.round((t - windowStart) / 1000)
+        });
+        shown = { ids: new Set(late.keys()), step, at: t };
+      }
+    } else if (shown.ids.size) {
+      log('info', 'readings on time again', { machines: [...shown.ids], threshold_ms: warnMs });
+      shown = { ids: new Set(), step: 0, at: t };
     }
     late = new Map();
     windowStart = t;
