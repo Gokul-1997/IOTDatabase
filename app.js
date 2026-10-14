@@ -46,7 +46,7 @@ async function startServer() {
        applied, every write would fail. Not subscribing leaves the messages
        queued on the broker (persistent session) until it is fixed. */
     const missing = await missingTelemetryColumns(pool, TELEMETRY_COLUMNS);
-    const missingT = await missingTables(pool, ['ingest_checkpoint', 'telemetry_late']);
+    const missingT = await missingTables(pool, ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings', 'ingest_gaps']);
     if (missing.length || missingT.length) {
       log('error', 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',
         { missing_columns: missing, missing_tables: missingT });

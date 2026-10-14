@@ -1,0 +1,7 @@
+# Collector account must have its own password and stable client ID.
+user iot-collector
+topic read machines/+/telemetry
+
+# Each device username is its own machine API key. A device can publish only
+# under that exact identity; never distribute the collector credential.
+pattern write machines/%u/telemetry

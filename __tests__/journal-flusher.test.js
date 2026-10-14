@@ -18,7 +18,7 @@ const quiet = () => {};
  * failure part-way through a batch leaves nothing behind — as Postgres does.
  */
 function fakeDb() {
-  const db = { telemetry: [], late: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, queries: 0, loseCommitReply: false };
+  const db = { telemetry: [], late: [], alarms: [], meters: [], gaps: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, queries: 0, loseCommitReply: false };
   db.pool = {
     async query(sql, params) {
       if (db.down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
@@ -69,6 +69,13 @@ function fakeDb() {
               db.hourly.set(k, { run: t.run + run[i], idle: t.idle + idle[i], qty: t.qty + qty[i] });
             }));
             return {};
+          }
+          if (sql.includes('INSERT INTO ingest_gaps')) { staged.push(() => db.gaps.push(params)); return {}; }
+          if (sql.includes('machine_alarms')) {
+            staged.push(() => db.alarms.push({ sql, params })); return {};
+          }
+          if (sql.includes('INSERT INTO energy_meter_readings')) {
+            staged.push(() => db.meters.push(params)); return {};
           }
           if (sql.includes('INSERT INTO ingest_checkpoint')) {
             if (sql.includes('DO NOTHING')) return {};
@@ -248,4 +255,37 @@ describe('writer', () => {
     expect(await flusher.drain(2000)).toBe(true);
     expect(db.telemetry).toHaveLength(200);
   });
+});
+
+
+test('alarm/meter operations survive DB outage and lost COMMIT reply exactly with their reading', async () => {
+  const { db, journal, flusher } = setup();
+  const base = reading(7, 1);
+  base.a = { machineId: 7, companyId: 4, shiftId: 1, at: 1,
+    opens: [{ alarm_code: 'SV0401', alarm_type: 'SV', alarm_severity: 'CRITICAL' }], closes: [] };
+  base.m = { machineId: 7, companyId: 4, at: 1, reading: { kw_total: 12 } };
+  journal.append(base);
+  db.down = true;
+  await expect(flusher.pass()).rejects.toThrow();
+  expect(db.alarms).toHaveLength(0); expect(db.meters).toHaveLength(0);
+  db.down = false; db.loseCommitReply = true;
+  await expect(flusher.pass()).rejects.toThrow('COMMIT response lost');
+  expect(db.alarms).toHaveLength(1); expect(db.meters).toHaveLength(1);
+  await drainPasses(flusher);
+  expect(db.telemetry).toHaveLength(1); expect(db.alarms).toHaveLength(1); expect(db.meters).toHaveLength(1);
+  journal.close();
+});
+
+
+test('unallocatable gap provenance commits once and never adds unverified hourly parts', async () => {
+  const { db, journal, flusher } = setup();
+  const record = reading(7, 100);
+  record.h = [];
+  record.gap = { company_id: 4, machine_id: 7, from: 1, to: 100,
+    unallocated_parts: 8, unallocated_energy: 1.5, reason: 'observations_missing' };
+  journal.append(record); db.loseCommitReply = true;
+  await expect(flusher.pass()).rejects.toThrow('COMMIT response lost');
+  await drainPasses(flusher);
+  expect(db.gaps).toHaveLength(1); expect(db.gaps[0][7]).toBe(8);
+  expect(db.hourly.size).toBe(0); journal.close();
 });

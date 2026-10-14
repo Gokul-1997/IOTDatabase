@@ -23,6 +23,8 @@
  * moves past it.
  */
 import { sumSlices } from './hourly.js';
+import { writeAlarmTransition } from './alarm-transition.js';
+import { METER_FIELDS } from './power-signals.js';
 
 export function isDataError(err) {
   return !!err && typeof err.code === 'string' && (err.code.startsWith('22') || err.code.startsWith('23'));
@@ -79,6 +81,28 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
       );
       written.hourly_upserts = hourly.length;
     }
+    // Order matters: an alarm may open and close within this batch.
+    for (const record of records) {
+      if (record.gap) {
+        const gap = record.gap;
+        await client.query(`INSERT INTO ingest_gaps
+          (collector_id,journal_seq,company_id,machine_id,last_observed_at,resumed_at,gap_seconds,
+           known_state_seconds,unallocated_parts,unallocated_energy_kwh,reason,received_at)
+          VALUES($1,$2,$3,$4,to_timestamp($5),to_timestamp($6),$7,60,$8,$9,$10,$11)
+          ON CONFLICT(collector_id,journal_seq) DO NOTHING`,
+        [collectorId, record.s, gap.company_id, gap.machine_id, gap.from, gap.to, gap.to - gap.from,
+          gap.unallocated_parts, gap.unallocated_energy, gap.reason, record.r.received_at]);
+      }
+      if (record.a) await writeAlarmTransition(client, record.a);
+      if (record.m) {
+        const { machineId, companyId, at, reading } = record.m;
+        const columns = ['machine_id', 'company_id', 'read_at', ...METER_FIELDS.map(([c]) => c)];
+        const cells = columns.map((c, i) => c === 'read_at' ? `to_timestamp($${i + 1})` : `$${i + 1}`);
+        await client.query(`INSERT INTO energy_meter_readings (${columns.join(',')}) VALUES (${cells.join(',')})
+          ON CONFLICT (machine_id, read_at) DO NOTHING`,
+        [machineId, companyId, at, ...METER_FIELDS.map(([c]) => reading[c] ?? null)]);
+      }
+    }
     return written;
   }
 
@@ -130,7 +154,8 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
       } catch (err) {
         if (!isDataError(err)) throw err;
         stats.bad_records++;
-        log('error', 'dropped a reading the database refused', {
+        journal.quarantine?.(rec, { reason: 'database_rejected', error: err.message, code: err.code });
+        log('error', 'quarantined a reading the database refused', {
           machine_id: rec.r?.machine_id ?? rec.l?.machine_id, device_time: rec.r?.device_time, error: err.message, seq: rec.s
         });
         checkpoint = Math.max(checkpoint, await applyTx([rec], { skipData: true }));
@@ -140,8 +165,13 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
 
   /** One pass. Resolves to the number of records handled (0 = nothing waiting). */
   async function pass() {
-    const { records, position } = journal.read(batchSize);
-    if (!records.length) return 0;
+    const { records, position, advanced } = journal.read(batchSize);
+    if (!records.length) {
+      if (advanced) journal.ack(position, 0);
+      return 0;
+    }
+    // Never let DB state move beyond journal durability, even if fsync fails.
+    await journal.syncThrough?.(records.at(-1).s);
     const fresh = records.filter(r => r.s > checkpoint);
     if (fresh.length) {
       const t0 = Date.now();

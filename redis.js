@@ -4,11 +4,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const redis = createClient({
+  disableOfflineQueue: true,
+  commandsQueueMaxLength: 128,
   socket: {
     host: process.env.REDIS_HOST,
     port: Number(process.env.REDIS_PORT),
     // exponential backoff, capped at 5s — never give up
     reconnectStrategy: (retries) => Math.min(retries * 100, 5000),
+    connectTimeout: 5000,
     keepAlive: 15_000
   },
   password: process.env.REDIS_PASSWORD
@@ -19,6 +22,5 @@ redis.on('reconnecting', () => console.warn(JSON.stringify({ t: new Date().toISO
 redis.on('ready',        () => console.log(JSON.stringify({ t: new Date().toISOString(), level: 'info',  msg: 'redis ready' })));
 redis.on('end',          () => console.warn(JSON.stringify({ t: new Date().toISOString(), level: 'warn',  msg: 'redis connection closed' })));
 
-await redis.connect();
-
-console.log(JSON.stringify({ t: new Date().toISOString(), level: 'info', msg: 'redis connected' }));
+// The journal and database remain available while Redis reconnects.
+redis.connect().catch(err => console.error(JSON.stringify({ t: new Date().toISOString(), level: 'error', msg: 'redis initial connection failed', error: err.message })));

@@ -24,7 +24,7 @@ let sources = { journal: null, flusher: null, lag: null };
 export function setMqttConnected(state) { mqttConnected = !!state; }
 export function markMessage()           { messagesTotal++; lastMessageAt = Date.now(); }
 export function markError()             { errorsTotal++; }
-export function count(outcome)          { outcomes[outcome] = (outcomes[outcome] || 0) + 1; }
+export function count(outcome, amount = 1) { outcomes[outcome] = (outcomes[outcome] || 0) + amount; }
 export function setSources(next)        { sources = { ...sources, ...next }; }
 
 /* A ping that cannot answer within 2 s counts as down. Without the limit,
@@ -58,7 +58,7 @@ async function buildHealth() {
   const lag     = sources.lag?.snapshot() ?? null;
 
   // healthy = connected to all three, and the writer is keeping up
-  const healthy = db && rd && mqttConnected && (writer ? writer.db_ok : true);
+  const healthy = db && rd && mqttConnected && (writer ? writer.db_ok : true) && !journal?.failed;
 
   return {
     status: healthy ? 'ok' : 'degraded',
@@ -93,7 +93,9 @@ function metricsText(h) {
     `pms_journal_pending ${h.journal.pending}`,
     `pms_journal_bytes ${h.journal.bytes}`,
     `pms_journal_segments ${h.journal.segments}`,
-    `pms_journal_refused_total ${h.journal.refused}`);
+    `pms_journal_refused_total ${h.journal.refused}`,
+    `pms_journal_corrupt_total ${h.journal.corrupt ?? 0}`,
+    `pms_journal_failed ${h.journal.failed ? 1 : 0}`);
   if (h.writer) lines.push(
     `pms_writer_db_ok ${h.writer.db_ok ? 1 : 0}`,
     `pms_writer_rows_total ${h.writer.rows_written}`,
