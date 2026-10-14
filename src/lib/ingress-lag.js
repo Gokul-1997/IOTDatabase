@@ -10,8 +10,9 @@
  * In the log, a line naming every late machine and its worst lag when the
  * lateness starts, when another machine falls behind, when it gets worse
  * (past 60 s, 120 s, 240 s — error from 120 s), as a reminder every 15
- * minutes while it lasts, and once when every machine is back under the
- * threshold. Not a line per reading (three a second on 6 Oct 2026), and not
+ * minutes while it lasts, and once for each machine that supplies a new
+ * reading under the threshold. Silence does not establish recovery.
+ * Not a line per reading (three a second on 6 Oct 2026), and not
  * the same line every minute: the Fanuc gateway ran a steady 15 s behind for
  * days, and a minute-by-minute repeat of that read like a fault.
  */
@@ -24,10 +25,22 @@ export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs =
   const latest = new Map();   // machine id → { ms, at }
   let late = new Map();       // machine id → { readings, worstMs } since the last summary
   let windowStart = now();
-  let shown = { ids: new Set(), step: 0, at: -Infinity };   // what the last line said
+  const shown = new Map();    // unresolved reported machines → last reported severity step
+  const recovered = new Set(); // reported machines with a subsequent on-time reading
+  let lastShownAt = -Infinity;
   const stepOf = ms => STEPS_MS.filter(s => ms > s).length;
 
+  function forget(t) {
+    for (const [id, v] of latest) {
+      if (t - v.at <= FORGET_MS) continue;
+      latest.delete(id);
+      shown.delete(id);
+      recovered.delete(id);
+    }
+  }
+
   function summarize(t) {
+    forget(t);
     if (late.size) {
       const machines = {};
       let readings = 0;
@@ -38,17 +51,29 @@ export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs =
         worst = Math.max(worst, m.worstMs);
       }
       const step = stepOf(worst);
-      const newlyLate = [...late.keys()].some(id => !shown.ids.has(id));
-      if (newlyLate || step > shown.step || t - shown.at >= remindMs) {
+      const newlyLate = [...late.keys()].some(id => !shown.has(id));
+      // Compare the group's severity with machines actually seen late in this
+      // window. A silent severe machine must not mask an active group's rise,
+      // and sequential arrivals at a window boundary must not repeat it.
+      let previousStep = 0;
+      for (const id of late.keys()) previousStep = Math.max(previousStep, shown.get(id) ?? 0);
+      const escalated = step > previousStep;
+      if (newlyLate || escalated || t - lastShownAt >= remindMs) {
         log(step >= 2 ? 'error' : 'warn', 'readings arriving late', {
           machines, late_readings: readings, worst_ms: worst,
           threshold_ms: warnMs, limit_ms: limitMs, window_s: Math.round((t - windowStart) / 1000)
         });
-        shown = { ids: new Set(late.keys()), step, at: t };
+        for (const [id, m] of late) {
+          if (latest.has(id)) shown.set(id, stepOf(m.worstMs));
+        }
+        lastShownAt = t;
       }
-    } else if (shown.ids.size) {
-      log('info', 'readings on time again', { machines: [...shown.ids], threshold_ms: warnMs });
-      shown = { ids: new Set(), step: 0, at: t };
+    }
+    if (recovered.size) {
+      log('info', 'readings on time again', { machines: [...recovered], threshold_ms: warnMs });
+      for (const id of recovered) shown.delete(id);
+      recovered.clear();
+      if (!shown.size) lastShownAt = t;
     }
     late = new Map();
     windowStart = t;
@@ -58,6 +83,10 @@ export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs =
     observe(machineId, lagMs) {
       const t = now();
       latest.set(machineId, { ms: lagMs, at: t });
+      if (shown.has(machineId)) {
+        if (lagMs > warnMs) recovered.delete(machineId);
+        else recovered.add(machineId);
+      }
       if (lagMs > warnMs) {
         const m = late.get(machineId) || { readings: 0, worstMs: 0 };
         m.readings++;
@@ -71,10 +100,10 @@ export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs =
        Negative means the gateway's clock is ahead of this server's. */
     snapshot() {
       const t = now();
+      forget(t);
       const machines = {};
       let worst = null;
       for (const [id, v] of latest) {
-        if (t - v.at > FORGET_MS) { latest.delete(id); continue; }
         machines[id] = Math.round(v.ms);
         if (!worst || v.ms > worst.lag_ms) worst = { machine_id: id, lag_ms: Math.round(v.ms) };
       }

@@ -1,6 +1,6 @@
 /*
- * How late readings arrive, per machine: one log line a minute while any
- * machine is behind, never one per reading; the latest lag on /metrics.
+ * How late readings arrive, per machine: transitions and periodic reminders,
+ * never one line per reading; recovery needs a new reading from that machine.
  */
 import { createLagTracker, lagMetricLines } from '../src/lib/ingress-lag.js';
 
@@ -22,7 +22,7 @@ test('readings on time log nothing; /metrics shows each machine\'s latest lag', 
   expect(lag.snapshot()).toEqual({ worst: { machine_id: 15, lag_ms: 2_400 }, machines: { 15: 2_400, 28: -900 } });
 });
 
-test('a gateway 14.5 s behind for two minutes: one line a minute, naming each late machine and its worst lag', () => {
+test('a gateway 14.5 s behind for two minutes: one warning, naming each late machine and its worst lag', () => {
   const { lag, lines, advance } = setup();
   // as on 7 Oct 2026 00:55 IST: ten Fanuc machines every 3 s, ~14.5 s late; a Mitsubishi on time
   for (let i = 0; i < 40; i++) {
@@ -37,6 +37,91 @@ test('a gateway 14.5 s behind for two minutes: one line a minute, naming each la
   expect(line.machines[17]).toBe(14_517);
   expect(line.late_readings).toBeGreaterThanOrEqual(200);
   expect(line.machines[28]).toBeUndefined();     // the machine on time is not named
+});
+
+test('a late machine going silent is not reported recovered when other machines are on time', () => {
+  const { lag, lines, advance } = setup();
+  lag.observe(23, 61_762_437);
+  advance(61_000);
+  lag.observe(28, 1_000);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toMatchObject({ level: 'error', machines: { 23: 61_762_437 } });
+  for (let i = 0; i < 4; i++) {
+    advance(61_000);
+    lag.observe(28, 1_000);
+  }
+  expect(lines.filter(line => line.msg === 'readings on time again')).toEqual([]);
+  expect(lag.snapshot().machines).toEqual({ 23: 61_762_437, 28: 1_000 });
+  lag.observe(23, 1_000);
+  advance(61_000);
+  lag.observe(28, 1_000);
+  expect(lines[1]).toMatchObject({ msg: 'readings on time again', machines: [23] });
+});
+
+test('only the machine with a new on-time reading recovers while another stays late', () => {
+  const { lag, lines, advance } = setup();
+  lag.observe(15, 20_000);
+  lag.observe(16, 25_000);
+  advance(61_000);
+  lag.observe(16, 25_000);
+  lag.observe(15, 1_000);
+  advance(61_000);
+  lag.observe(16, 25_000);
+  expect(lines.map(line => [line.msg, line.machines])).toEqual([
+    ['readings arriving late', { 15: 20_000, 16: 25_000 }],
+    ['readings on time again', [15]]
+  ]);
+  advance(61_000);
+  lag.observe(16, 1_000);
+  expect(lines[2]).toMatchObject({ msg: 'readings on time again', machines: [16] });
+  advance(61_000);
+  lag.observe(15, 1_000);
+  expect(lines).toHaveLength(3);
+});
+
+test('a new late reading cancels pending recovery before the summary', () => {
+  const { lag, lines, advance } = setup();
+  lag.observe(15, 20_000);
+  advance(61_000);
+  lag.observe(15, 20_000);
+  lag.observe(15, 1_000);
+  lag.observe(15, 20_000);
+  advance(61_000);
+  lag.observe(28, 1_000);
+  expect(lines).toHaveLength(1);
+  lag.observe(15, 1_000);
+  advance(61_000);
+  lag.observe(28, 1_000);
+  expect(lines[1]).toMatchObject({ msg: 'readings on time again', machines: [15] });
+});
+
+test('a silent severe machine does not suppress another machine escalating', () => {
+  const { lag, lines, advance } = setup();
+  lag.observe(23, 61_762_437);
+  lag.observe(28, 15_000);
+  advance(61_000);
+  lag.observe(28, 15_000);
+  advance(61_000);
+  lag.observe(28, 70_000);
+  expect(lines.map(line => [line.msg, line.level, line.machines])).toEqual([
+    ['readings arriving late', 'error', { 23: 61_762_437, 28: 15_000 }],
+    ['readings arriving late', 'warn', { 28: 70_000 }]
+  ]);
+});
+
+test('expiring a silent machine from metrics does not announce recovery', () => {
+  const { lag, lines, advance } = setup();
+  lag.observe(15, 20_000);
+  advance(61_000);
+  lag.observe(28, 1_000);
+  advance(10 * 60_000);
+  lag.observe(28, 1_000);
+  expect(lag.snapshot().machines).toEqual({ 28: 1_000 });
+  expect(lines.map(line => line.msg)).toEqual(['readings arriving late']);
+  // A new late episode after expiry gets a fresh warning.
+  advance(61_000);
+  lag.observe(15, 20_000);
+  expect(lines[1]).toMatchObject({ msg: 'readings arriving late', machines: { 15: 20_000 } });
 });
 
 test('back under the threshold is said once; a machine falling behind later gets its own line', () => {
