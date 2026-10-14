@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import mqtt from 'mqtt';
 import { pool } from './db.js';
 import { redis } from './redis.js';
@@ -8,6 +7,7 @@ import { createIdentityWriter } from './src/lib/controller-identity.js';
 import { createLagTracker } from './src/lib/ingress-lag.js';
 import { createMessageProcessor } from './src/lib/message-processor.js';
 import { installAdmission } from './src/lib/admission.js';
+import { mqttConfig } from './src/lib/mqtt-config.js';
 
 const machineCache = new Map();
 const negativeCache = new Map();
@@ -65,7 +65,7 @@ async function hydrate(machine) {
     energy_meter_at: rows[0].energy_meter_at == null ? null : Number(rows[0].energy_meter_at) } : null;
 }
 const recordControllerIdentity = createIdentityWriter({ pool, log });
-export async function startMQTT() {
+export async function startMQTT(config = mqttConfig()) {
   await preloadMachines();
   processor = createMessageProcessor({ journal, shifts, lookupMachine, hydrate, redis,
     recordControllerIdentity, recordMessage, count, log, ingressLag });
@@ -73,20 +73,9 @@ export async function startMQTT() {
   refreshTimer = setInterval(() => preloadMachines().catch(error =>
     log('error', 'machine refresh failed', { error: error.message })), 30_000);
   refreshTimer.unref();
-  const clientId = process.env.MQTT_CLIENT_ID || `pms-ingest-${process.env.NODE_APP_INSTANCE || '0'}`;
-  const url = process.env.MQTT_URL || 'mqtt://127.0.0.1:1883';
-  const secure = url.startsWith('mqtts://');
-  if (process.env.NODE_ENV === 'production' && !secure && process.env.MQTT_ALLOW_INSECURE !== 'true') {
-    throw new Error('Production MQTT requires mqtts://; MQTT_ALLOW_INSECURE=true is only for a trusted local broker');
-  }
-  client = mqtt.connect(url, {
-    clientId, clean: false, reconnectPeriod: 2000, connectTimeout: 10_000,
-    keepalive: 30, resubscribe: true, queueQoSZero: false,
-    ...(secure && { rejectUnauthorized: true }),
-    ...(process.env.MQTT_CA_FILE && { ca: fs.readFileSync(process.env.MQTT_CA_FILE) }),
-    ...(process.env.MQTT_USER && { username: process.env.MQTT_USER }),
-    ...(process.env.MQTT_PASS && { password: process.env.MQTT_PASS })
-  });
+  const { url, options } = config;
+  const { clientId } = options;
+  client = mqtt.connect(url, options);
   intake = installAdmission(client, { count, log, process: async (...args) => {
     markMessage(); await processor.handleMessage(...args);
   } });
