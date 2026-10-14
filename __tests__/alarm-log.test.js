@@ -112,8 +112,23 @@ describe('opening an alarm', () => {
     });
     const p = query.mock.calls[0][1];
     // a device sending junk must not stop every later alarm being recorded
-    expect(p[3].length).toBeLessThanOrEqual(100);
+    expect(p[3].length).toBeLessThanOrEqual(50);
     expect(p[4].length).toBeLessThanOrEqual(50);
+    expect(p[6]).toContain('x'.repeat(500));
+    expect(p[6]).toContain('y'.repeat(500));
+  });
+
+  test('Unicode type and code honor character limits and keep the original text', async () => {
+    const alarm = { alarm_type: '🚨'.repeat(51), alarm_code: '🔧'.repeat(51), alarm_message: 'Diagnostic details: '.repeat(100) };
+    await openAlarm({ ...base, at: new Date(), alarm });
+    const params = query.mock.calls[0][1];
+    expect(params[3]).toBe('🚨'.repeat(50));
+    expect(Array.from(params[4])).toHaveLength(50);
+    expect(params[4]).toBe(alarmKey(alarm));
+    expect(params[6]).toContain(alarm.alarm_type);
+    expect(params[6]).toContain(alarm.alarm_code);
+    expect(params[6]).toContain(alarm.alarm_message);
+    expect(alarmKey(alarm)).toBe(params[4]);
   });
 });
 
@@ -203,6 +218,26 @@ describe('one row per alarm', () => {
     const highest = Math.max(...[...sql.matchAll(/\$(\d+)/g)].map(m => Number(m[1])));
     expect(params.length).toBe(highest);
   });
+
+  test('long code-less descriptions sharing a prefix open and clear independently', async () => {
+    const first = { alarm_type: `${'Hydraulic circuit controller emergency: '.repeat(3)}one` };
+    const second = { alarm_type: `${'Hydraulic circuit controller emergency: '.repeat(3)}two` };
+    await trackAlarm({ ...base, prev: { alarm: false }, isAlarm: true, alarms: [first, second] });
+    const firstKey = inserts()[0][1][3], secondKey = inserts()[1][1][3];
+    expect(firstKey).not.toBe(secondKey);
+    expect(firstKey).toBe(alarmKey(first));
+    expect(secondKey).toBe(alarmKey(second));
+    query.mockClear();
+    await trackAlarm({ ...base, deviceTime: base.deviceTime + 1,
+      prev: { alarm: true, alarm_codes: [firstKey, secondKey] }, isAlarm: true, alarms: [second] });
+    expect(inserts()).toHaveLength(0);
+    expect(updates()[0][1][2]).toEqual([firstKey]);
+    query.mockClear();
+    await trackAlarm({ ...base, deviceTime: base.deviceTime + 2,
+      prev: { alarm: true, alarm_codes: [secondKey] }, isAlarm: true, alarms: [first, second] });
+    expect(inserts()).toHaveLength(1);
+    expect(inserts()[0][1][3]).toBe(firstKey);
+  });
 });
 
 describe('alarmKey matches the open-alarm unique index', () => {
@@ -218,7 +253,7 @@ describe('alarmKey matches the open-alarm unique index', () => {
   });
   test('truncated exactly as the insert truncates, so the close finds the row', () => {
     expect(alarmKey({ alarm_code: 'c'.repeat(80) })).toHaveLength(50);
-    expect(alarmKey({ alarm_type: 't'.repeat(300) })).toHaveLength(100);
+    expect(alarmKey({ alarm_type: 't'.repeat(300) })).toHaveLength(50);
   });
 });
 

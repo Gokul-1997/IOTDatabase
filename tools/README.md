@@ -30,6 +30,8 @@ local workload/cache; neither measures broker or database capacity or proves
 1,000 machines at 1 Hz.
 
 Apply Backend migration 043 before deploying this build; startup checks require `ingest_gaps`.
+
+Alarm text writers now match the existing VARCHAR(50) type/code contract and preserve full original descriptions in TEXT. For rejected records, `node tools/inspect-quarantine.mjs <file> --seq <sequence>` provides private read-only IDs/field-length diagnostics without loading environment or connecting services. See [quarantine text correction and recovery limits](../deploy/QUARANTINE_TEXT_FIX.md). Restarting does not automatically replay records the checkpoint has already passed.
 Gap records are queryable by company/machine/time and commit with the journal checkpoint.
 No retroactive shift allocation or automatic retention deletion is performed.
 

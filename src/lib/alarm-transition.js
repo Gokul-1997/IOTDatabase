@@ -1,8 +1,6 @@
 /** Pure, immutable alarm operations carried with the accepted journal record. */
-export function alarmKey(alarm) {
-  return alarm?.alarm_code != null ? String(alarm.alarm_code).slice(0, 50) :
-    String(alarm?.alarm_type || 'UNSPECIFIED').slice(0, 100);
-}
+import { alarmFields, alarmKey } from './alarm-text.js';
+export { alarmKey } from './alarm-text.js';
 export function alarmTransition({ prev, alarms = [], isAlarm, companyId, machineId, shiftId, deviceTime }) {
   const known = Array.isArray(prev?.alarm_codes);
   const before = new Set(known ? prev.alarm_codes : []);
@@ -23,12 +21,10 @@ export async function writeAlarmTransition(client, transition) {
     [companyId, machineId, at, keep !== undefined ? keep : closes]);
   }
   for (const alarm of opens) {
+    const { alarmType, alarmCode, severity, message } = alarmFields(alarm);
     await client.query(`INSERT INTO machine_alarms
       (company_id, machine_id, shift_id, alarm_type, alarm_code, severity, message, started_at, created_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,to_timestamp($8),NOW()) ON CONFLICT DO NOTHING`,
-    [companyId, machineId, shiftId, String(alarm.alarm_type || 'UNSPECIFIED').slice(0, 100),
-      alarm.alarm_code != null ? String(alarm.alarm_code).slice(0, 50) : null,
-      String(alarm.alarm_severity || 'NORMAL').toUpperCase().slice(0, 20),
-      alarm.alarm_message ? String(alarm.alarm_message).slice(0, 500) : null, at]);
+    [companyId, machineId, shiftId, alarmType, alarmCode, severity, message, at]);
   }
 }

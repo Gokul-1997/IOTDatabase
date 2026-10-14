@@ -17,21 +17,12 @@
 
 import { pool } from '../../db.js';
 import { alarmIdentity, activeAlarms } from './condition-signals.js';
+import { alarmFields, alarmKey } from './alarm-text.js';
+export { alarmKey } from './alarm-text.js';
 
 /* Without a code from the controller, the alarm is identified by its type.
    The unique index in migration 017 is on COALESCE(alarm_code, alarm_type),
    so this matches what the database considers "the same alarm". */
-const UNKNOWN_TYPE = 'UNSPECIFIED';
-
-/**
- * The value the open-alarm unique index keys on, after the same truncation
- * openAlarm applies — so a key computed here always matches the stored row.
- */
-export function alarmKey(alarm) {
-  if (alarm?.alarm_code != null) return String(alarm.alarm_code).slice(0, 50);
-  return String(alarm?.alarm_type || UNKNOWN_TYPE).slice(0, 100);
-}
-
 /**
  * Open one alarm.
  *
@@ -44,9 +35,7 @@ export function alarmKey(alarm) {
  */
 export async function openAlarm({ companyId, machineId, shiftId, payload, alarm, at }) {
   const id = alarm || alarmIdentity(payload);
-  const alarmType = String(id.alarm_type || UNKNOWN_TYPE).slice(0, 100);
-  const alarmCode = id.alarm_code != null ? String(id.alarm_code).slice(0, 50) : null;
-  const severity  = String(id.alarm_severity || 'NORMAL').toUpperCase().slice(0, 20);
+  const { alarmType, alarmCode, severity, message } = alarmFields(id);
 
   await pool.query(
     `INSERT INTO machine_alarms
@@ -55,7 +44,7 @@ export async function openAlarm({ companyId, machineId, shiftId, payload, alarm,
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
      ON CONFLICT DO NOTHING`,
     [companyId, machineId, shiftId, alarmType, alarmCode, severity,
-     id.alarm_message ? String(id.alarm_message).slice(0, 500) : null, at]
+     message, at]
   );
 }
 

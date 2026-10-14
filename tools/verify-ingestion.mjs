@@ -10,6 +10,7 @@ import { createFlusher } from '../src/lib/flusher.js';
 import { createMessageProcessor } from '../src/lib/message-processor.js';
 import { telemetryInsert, TELEMETRY_COLUMNS } from '../buffer.js';
 import { METER_FIELDS } from '../src/lib/power-signals.js';
+import { alarmKey, alarmTransition, writeAlarmTransition } from '../src/lib/alarm-transition.js';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cnc-pg-ingest-'));
 const binary = name => ['/opt/homebrew/bin', '/usr/lib/postgresql/18/bin', '/usr/lib/postgresql/17/bin', '/usr/bin']
@@ -39,7 +40,7 @@ try {
       PRIMARY KEY(machine_id, shift_id, hour_start));
     CREATE TABLE ingest_checkpoint(collector_id text PRIMARY KEY, last_seq bigint NOT NULL, updated_at timestamptz DEFAULT now());
     CREATE TABLE machine_alarms(id bigserial PRIMARY KEY, company_id int, machine_id int, shift_id int,
-      alarm_type text, alarm_code text, severity text, message text, started_at timestamptz, created_at timestamptz, ended_at timestamptz);
+      alarm_type varchar(50), alarm_code varchar(50), severity varchar(20), message text, started_at timestamptz, created_at timestamptz, ended_at timestamptz);
     CREATE UNIQUE INDEX alarm_open ON machine_alarms(machine_id, COALESCE(alarm_code, alarm_type)) WHERE ended_at IS NULL;
     CREATE TABLE energy_meter_readings(machine_id int, company_id int, read_at timestamptz,
       ${METER_FIELDS.map(([column]) => `${column} double precision`).join(',')}, PRIMARY KEY(machine_id,read_at));`);
@@ -92,7 +93,49 @@ try {
   await assert.rejects(pool.query(`INSERT INTO ingest_gaps SELECT collector_id || '-foreign',journal_seq,99,machine_id,
     last_observed_at,resumed_at,gap_seconds,known_state_seconds,unallocated_parts,unallocated_energy_kwh,reason,received_at FROM ingest_gaps`),
   error => error.code === '23503');
-  console.log('PASS disposable PostgreSQL: raw + hourly + alarm open/close + meter commit exactly once through Redis outage, DB outage and lost COMMIT reply; 043 gap provenance, tenant integrity and collector grants.');
+
+  // Use the real production VARCHAR limits: these used to quarantine the entire reading.
+  const common = 'Hydraulic controller safety pressure circuit: '.repeat(2);
+  const longAlarms = [{ alarm_type: `${common}one` }, { alarm_type: `${common}two` },
+    { alarm_type: '🚨'.repeat(51), alarm_code: 'SV-UNICODE', alarm_message: 'Controller diagnostic: '.repeat(100) }];
+  const transitionBase = { companyId: 4, machineId: 7, shiftId: 1, deviceTime: time + 86401 };
+  await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, prev: null, alarms: longAlarms, isAlarm: true }));
+  const open = (await pool.query('SELECT * FROM machine_alarms WHERE ended_at IS NULL ORDER BY id')).rows;
+  assert.equal(open.length, 3);
+  assert.equal(open[0].alarm_type, alarmKey(longAlarms[0]));
+  assert.equal(open[1].alarm_type, alarmKey(longAlarms[1]));
+  assert.notEqual(open[0].alarm_type, open[1].alarm_type);
+  for (let i = 0; i < longAlarms.length; i++) {
+    assert.equal(Array.from(open[i].alarm_type).length, 50);
+    assert.ok(open[i].message.includes(longAlarms[i].alarm_type));
+  }
+  assert.ok(open[2].message.includes(longAlarms[2].alarm_message));
+  // One long description clears while the other with the same prefix stays active.
+  const keep = longAlarms.slice(1);
+  await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, deviceTime: transitionBase.deviceTime + 1,
+    prev: { alarm: true, alarm_codes: longAlarms.map(alarmKey) }, alarms: keep, isAlarm: true }));
+  assert.deepEqual((await pool.query('SELECT COALESCE(alarm_code,alarm_type) AS key FROM machine_alarms WHERE ended_at IS NULL ORDER BY id')).rows.map(r => r.key), keep.map(alarmKey));
+  // Reappearing is a new period; the unchanged alarm keeps its original start.
+  await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, deviceTime: transitionBase.deviceTime + 2,
+    prev: { alarm: true, alarm_codes: keep.map(alarmKey) }, alarms: longAlarms, isAlarm: true }));
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM machine_alarms WHERE alarm_type=$1', [alarmKey(longAlarms[0])])).rows[0].n, 2);
+  // Restart reconciliation with just the second description closes only stale keys.
+  await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, deviceTime: transitionBase.deviceTime + 3,
+    prev: null, alarms: [longAlarms[1]], isAlarm: true }));
+  assert.deepEqual((await pool.query('SELECT alarm_type FROM machine_alarms WHERE ended_at IS NULL')).rows.map(r => r.alarm_type), [alarmKey(longAlarms[1])]);
+  const longCodes = [{ alarm_type: 'Controller alarm', alarm_code: 'C'.repeat(60) + 'one' },
+    { alarm_type: 'Controller alarm', alarm_code: 'C'.repeat(60) + 'two' }];
+  await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, deviceTime: transitionBase.deviceTime + 4,
+    prev: null, alarms: longCodes, isAlarm: true }));
+  const codes = (await pool.query('SELECT alarm_code,message FROM machine_alarms WHERE ended_at IS NULL ORDER BY id')).rows;
+  assert.equal(codes.length, 2);
+  assert.notEqual(codes[0].alarm_code, codes[1].alarm_code);
+  assert.equal(Array.from(codes[0].alarm_code).length, 50);
+  assert.ok(codes[0].message.includes(longCodes[0].alarm_code));
+  await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, deviceTime: transitionBase.deviceTime + 5,
+    prev: { alarm: true, alarm_codes: longCodes.map(alarmKey) }, alarms: [longCodes[1]], isAlarm: true }));
+  assert.deepEqual((await pool.query('SELECT alarm_code FROM machine_alarms WHERE ended_at IS NULL')).rows.map(r => r.alarm_code), [alarmKey(longCodes[1])]);
+  console.log('PASS disposable PostgreSQL: raw + hourly + alarm open/close + meter commit exactly once through Redis outage, DB outage and lost COMMIT reply; 043 gap provenance, tenant integrity and collector grants; real VARCHAR(50) alarm fields preserve Unicode and full text, distinguish long labels, close, reopen and reconcile.');
 } finally {
   journal?.close();
   await pool?.end();

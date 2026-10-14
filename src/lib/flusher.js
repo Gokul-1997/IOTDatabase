@@ -19,15 +19,74 @@
  * A batch the database refuses for its *data* (SQLSTATE class 22/23) is
  * written record by record so one bad value cannot hold up every machine
  * (2026-09-15: one machine's 42279658848 in an INTEGER column stopped all
- * telemetry). The record that fails is logged and skipped; the checkpoint
- * moves past it.
+ * telemetry). The record that fails is preserved in the private, fsynced
+ * quarantine before the checkpoint moves past it. Infrastructure failures
+ * keep the original records pending instead of classifying them as bad data.
  */
 import { sumSlices } from './hourly.js';
 import { writeAlarmTransition } from './alarm-transition.js';
+import { alarmFields } from './alarm-text.js';
 import { METER_FIELDS } from './power-signals.js';
 
 export function isDataError(err) {
   return !!err && typeof err.code === 'string' && (err.code.startsWith('22') || err.code.startsWith('23'));
+}
+
+// A malformed checkpoint or transaction is an infrastructure/schema problem,
+// not evidence that a machine's reading should be skipped.
+function canQuarantine(err) {
+  return isDataError(err) && !['ingest_checkpoint', 'transaction'].includes(err.ingestStage);
+}
+
+async function atStage(stage, operation) {
+  try { return await operation(); }
+  catch (err) {
+    if (err && typeof err === 'object') err.ingestStage = stage;
+    throw err;
+  }
+}
+
+function diagnostics(err, records, collectorId) {
+  const meta = { code: err.code, stage: err.ingestStage };
+  // PostgreSQL detail/where/query can contain payload values; never copy them.
+  for (const field of ['table', 'column', 'constraint']) {
+    if (typeof err[field] === 'string' && /^[A-Za-z_][A-Za-z0-9_$]{0,127}$/.test(err[field])) meta[field] = err[field];
+  }
+  if (err.code === '22001') {
+    const limit = /(?:character varying|varchar)\((\d+)\)/i.exec(err.message || '')?.[1];
+    meta.error = 'database text value exceeds column length' + (limit ? ` (${limit} characters)` : '');
+    const lengths = {};
+    const count = (field, value) => {
+      if (value == null) return;
+      // varchar limits count characters, not UTF-8 bytes or UTF-16 code units.
+      let length = 0;
+      for (const _char of String(value)) length++;
+      lengths[field] = Math.max(lengths[field] || 0, length);
+    };
+    for (const record of records) {
+      if (err.ingestStage === 'telemetry_raw' && record.r) {
+        count('machine_status', ['RUN', 'RUNNING', 'CUTTING'].includes(String(record.r.machine_status || '').toUpperCase()) ? 'RUNNING' : 'IDLE');
+        count('mode', record.r.mode);
+      } else if (err.ingestStage === 'telemetry_late' && record.l) {
+        count('reason', record.l.reason);
+      } else if (err.ingestStage === 'ingest_gaps' && record.gap) {
+        count('collector_id', collectorId);
+        count('reason', record.gap.reason);
+      } else if (err.ingestStage === 'machine_alarms' && record.a) {
+        for (const alarm of record.a.opens || []) {
+          const fields = alarmFields(alarm);
+          count('alarm_type', fields.alarmType);
+          count('alarm_code', fields.alarmCode);
+          count('severity', fields.severity);
+          count('message', fields.message);
+        }
+      } else if (err.ingestStage === 'ingest_checkpoint') count('collector_id', collectorId);
+    }
+    if (Object.keys(lengths).length) meta.text_lengths = lengths;
+  } else {
+    meta.error = isDataError(err) ? 'database rejected a value or constraint' : err.message;
+  }
+  return meta;
 }
 
 export function createFlusher({ pool, journal, collectorId, telemetryInsert, log = () => {}, batchSize = 1000 }) {
@@ -45,25 +104,27 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
     const written = { rows_written: 0, late_written: 0, hourly_upserts: 0 };
     const rows = records.filter(r => r.r).map(r => r.r);
     if (rows.length) {
-      const { text, values } = telemetryInsert(rows);
-      await client.query(text, values);
+      await atStage('telemetry_raw', async () => {
+        const { text, values } = telemetryInsert(rows);
+        await client.query(text, values);
+      });
       written.rows_written = rows.length;
     }
 
     const late = records.filter(r => r.l).map(r => r.l);
     if (late.length) {
-      await client.query(
+      await atStage('telemetry_late', () => client.query(
         `INSERT INTO telemetry_late (machine_id, company_id, device_time, received_at, reason, payload)
          SELECT * FROM unnest($1::int[], $2::int[], $3::bigint[], $4::timestamptz[], $5::text[], $6::jsonb[])`,
         [late.map(l => l.machine_id), late.map(l => l.company_id ?? null), late.map(l => l.device_time ?? null),
          late.map(l => l.received_at), late.map(l => l.reason), late.map(l => JSON.stringify(l.payload ?? null))]
-      );
+      ));
       written.late_written = late.length;
     }
 
     const hourly = sumSlices(records.flatMap(r => r.h || []));
     if (hourly.length) {
-      await client.query(
+      await atStage('production_hourly', () => client.query(
         `INSERT INTO production_hourly
            (company_id, machine_id, shift_id, hour_start, run_seconds, idle_seconds, manual_seconds, produced_qty, energy_kwh)
          SELECT c, m, s, to_timestamp(h), run, idle, man, qty, kwh
@@ -78,40 +139,40 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
         [hourly.map(h => h.company_id ?? null), hourly.map(h => h.machine_id), hourly.map(h => h.shift_id),
          hourly.map(h => h.hour_start), hourly.map(h => Math.round(h.run)), hourly.map(h => Math.round(h.idle)),
          hourly.map(h => Math.round(h.manual)), hourly.map(h => Math.round(h.produced)), hourly.map(h => h.energy || 0)]
-      );
+      ));
       written.hourly_upserts = hourly.length;
     }
     // Order matters: an alarm may open and close within this batch.
     for (const record of records) {
       if (record.gap) {
         const gap = record.gap;
-        await client.query(`INSERT INTO ingest_gaps
+        await atStage('ingest_gaps', () => client.query(`INSERT INTO ingest_gaps
           (collector_id,journal_seq,company_id,machine_id,last_observed_at,resumed_at,gap_seconds,
            known_state_seconds,unallocated_parts,unallocated_energy_kwh,reason,received_at)
           VALUES($1,$2,$3,$4,to_timestamp($5),to_timestamp($6),$7,60,$8,$9,$10,$11)
           ON CONFLICT(collector_id,journal_seq) DO NOTHING`,
         [collectorId, record.s, gap.company_id, gap.machine_id, gap.from, gap.to, gap.to - gap.from,
-          gap.unallocated_parts, gap.unallocated_energy, gap.reason, record.r.received_at]);
+          gap.unallocated_parts, gap.unallocated_energy, gap.reason, record.r.received_at]));
       }
-      if (record.a) await writeAlarmTransition(client, record.a);
+      if (record.a) await atStage('machine_alarms', () => writeAlarmTransition(client, record.a));
       if (record.m) {
         const { machineId, companyId, at, reading } = record.m;
         const columns = ['machine_id', 'company_id', 'read_at', ...METER_FIELDS.map(([c]) => c)];
         const cells = columns.map((c, i) => c === 'read_at' ? `to_timestamp($${i + 1})` : `$${i + 1}`);
-        await client.query(`INSERT INTO energy_meter_readings (${columns.join(',')}) VALUES (${cells.join(',')})
+        await atStage('energy_meter_readings', () => client.query(`INSERT INTO energy_meter_readings (${columns.join(',')}) VALUES (${cells.join(',')})
           ON CONFLICT (machine_id, read_at) DO NOTHING`,
-        [machineId, companyId, at, ...METER_FIELDS.map(([c]) => reading[c] ?? null)]);
+        [machineId, companyId, at, ...METER_FIELDS.map(([c]) => reading[c] ?? null)]));
       }
     }
     return written;
   }
 
   async function commitCheckpoint(client, seq) {
-    await client.query(
+    await atStage('ingest_checkpoint', () => client.query(
       `INSERT INTO ingest_checkpoint (collector_id, last_seq, updated_at) VALUES ($1, $2, now())
        ON CONFLICT (collector_id) DO UPDATE SET last_seq = GREATEST(ingest_checkpoint.last_seq, EXCLUDED.last_seq), updated_at = now()`,
       [collectorId, seq]
-    );
+    ));
   }
 
   /** One transaction: the records and the checkpoint, or nothing. */
@@ -119,28 +180,28 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
     const client = await pool.connect();
     let releaseError;
     try {
-      await client.query('BEGIN');
+      await atStage('transaction', () => client.query('BEGIN'));
       // Seed before locking: concurrent first writes serialize on this key too.
-      await client.query(
+      await atStage('ingest_checkpoint', () => client.query(
         `INSERT INTO ingest_checkpoint (collector_id, last_seq) VALUES ($1, 0)
          ON CONFLICT (collector_id) DO NOTHING`, [collectorId]
-      );
-      const { rows } = await client.query(
+      ));
+      const { rows } = await atStage('ingest_checkpoint', () => client.query(
         'SELECT last_seq FROM ingest_checkpoint WHERE collector_id = $1 FOR UPDATE', [collectorId]
-      );
+      ));
       const durable = Number(rows[0]?.last_seq);
       if (!Number.isSafeInteger(durable) || durable < 0) throw new Error('Invalid ingest checkpoint');
       const fresh = records.filter(record => record.s > durable);
       const written = !skipData && fresh.length ? await writeRecords(client, fresh) : null;
       const nextCheckpoint = Math.max(durable, records.at(-1).s);
       if (fresh.length) await commitCheckpoint(client, nextCheckpoint);
-      await client.query('COMMIT');
+      await atStage('transaction', () => client.query('COMMIT'));
       if (written) for (const [key, value] of Object.entries(written)) stats[key] += value;
       return nextCheckpoint;
     } catch (err) {
       try { await client.query('ROLLBACK'); } catch { releaseError = err; }
       // Do not return a connection with an uncertain transaction state to the pool.
-      if (!isDataError(err)) releaseError = err;
+      if (!canQuarantine(err)) releaseError = err;
       throw err;
     } finally {
       client.release(releaseError);
@@ -152,11 +213,13 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
       try {
         checkpoint = Math.max(checkpoint, await applyTx([rec]));
       } catch (err) {
-        if (!isDataError(err)) throw err;
+        if (!canQuarantine(err)) throw err;
         stats.bad_records++;
-        journal.quarantine?.(rec, { reason: 'database_rejected', error: err.message, code: err.code });
+        const meta = diagnostics(err, [rec], collectorId);
+        journal.quarantine?.(rec, { reason: 'database_rejected', ...meta });
         log('error', 'quarantined a reading the database refused', {
-          machine_id: rec.r?.machine_id ?? rec.l?.machine_id, device_time: rec.r?.device_time, error: err.message, seq: rec.s
+          machine_id: rec.r?.machine_id ?? rec.l?.machine_id, device_time: rec.r?.device_time ?? rec.l?.device_time,
+          seq: rec.s, ...meta
         });
         checkpoint = Math.max(checkpoint, await applyTx([rec], { skipData: true }));
       }
@@ -178,8 +241,8 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
       try {
         checkpoint = Math.max(checkpoint, await applyTx(fresh));
       } catch (err) {
-        if (!isDataError(err)) throw err;
-        log('warn', 'batch refused for its data; writing record by record', { error: err.message, records: fresh.length });
+        if (!canQuarantine(err)) throw err;
+        log('warn', 'batch refused for its data; writing record by record', { ...diagnostics(err, fresh, collectorId), records: fresh.length });
         await applyOneByOne(fresh);
       }
       checkpoint = Math.max(checkpoint, fresh.at(-1).s);
@@ -201,7 +264,7 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
         if (n === 0) await journal.waitForData(250);
       } catch (err) {
         stats.retries++;
-        if (stats.db_ok) log('error', 'database write failed; readings stay in the journal and will be retried', { error: err.message, code: err.code });
+        if (stats.db_ok) log('error', 'database write failed; readings stay in the journal and will be retried', diagnostics(err, [], collectorId));
         stats.db_ok = false;
         pause = Math.min(pause ? pause * 2 : 500, 15_000);
         await pauseFor(pause);
@@ -226,7 +289,7 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
       const until = Date.now() + ms;
       while (Date.now() < until) {
         try { if (await pass() === 0) return true; }
-        catch (err) { log('warn', 'drain: database write failed', { error: err.message }); return false; }
+        catch (err) { log('warn', 'drain: database write failed', diagnostics(err, [], collectorId)); return false; }
       }
       return journal.stats().pending === 0;
     },

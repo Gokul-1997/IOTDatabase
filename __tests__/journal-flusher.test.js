@@ -18,7 +18,7 @@ const quiet = () => {};
  * failure part-way through a batch leaves nothing behind — as Postgres does.
  */
 function fakeDb() {
-  const db = { telemetry: [], late: [], alarms: [], meters: [], gaps: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, queries: 0, loseCommitReply: false };
+  const db = { telemetry: [], late: [], alarms: [], meters: [], gaps: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, refuseQuery: null, queries: 0, loseCommitReply: false };
   db.pool = {
     async query(sql, params) {
       if (db.down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
@@ -35,6 +35,8 @@ function fakeDb() {
         async query(sql, params) {
           db.queries++;
           if (db.down) throw Object.assign(new Error('Connection terminated'), { code: '57P01' });
+          const refused = db.refuseQuery?.(sql, params);
+          if (refused) throw refused;
           if (sql === 'BEGIN') { staged = []; return {}; }
           if (sql === 'ROLLBACK') { staged = []; return {}; }
           if (sql === 'COMMIT') {
@@ -98,10 +100,10 @@ const reading = (machine, t, extra = {}) => ({
   h: [{ company_id: 4, machine_id: machine, shift_id: 1, hour_start: 1000, run: 1, idle: 0, manual: 0, produced: 0, energy: 0 }]
 });
 
-function setup(dir = tmp(), db = fakeDb()) {
+function setup(dir = tmp(), db = fakeDb(), log = quiet) {
   const journal = createJournal({ dir, fsyncMs: 5, log: quiet });
   journal.open();
-  const flusher = createFlusher({ pool: db.pool, journal, collectorId: 'c1', telemetryInsert, log: quiet, batchSize: 50 });
+  const flusher = createFlusher({ pool: db.pool, journal, collectorId: 'c1', telemetryInsert, log, batchSize: 50 });
   return { dir, db, journal, flusher };
 }
 
@@ -237,6 +239,91 @@ describe('writer', () => {
     expect(flusher.stats().bad_records).toBe(1);
     expect(journal.stats().pending).toBe(0);         // not retried forever
     expect(db.checkpoint.get('c1')).toBeGreaterThan(0);
+  });
+
+  test('text rejection logs the stage, PostgreSQL identifiers and character lengths without payload values', async () => {
+    const events = [];
+    const { dir, db, journal, flusher } = setup(undefined, undefined, (level, message, meta) => events.push({ level, message, ...meta }));
+    const secret = 'DO-NOT-LOG-' + '🛠'.repeat(55);
+    journal.append(reading(1, 1));
+    const rejectedSeq = journal.append(reading(20, 2, { mode: secret }));
+    journal.append(reading(3, 3));
+    db.refuseQuery = (sql, params) => sql.startsWith('INSERT INTO telemetry_raw') && params.includes(secret)
+      ? Object.assign(new Error(`value too long for type character varying(50): ${secret}`), {
+        code: '22001', table: 'telemetry_raw', column: 'mode', detail: secret
+      }) : null;
+    await drainPasses(flusher);
+    const refusal = events.find(e => e.message === 'quarantined a reading the database refused');
+    expect(refusal).toMatchObject({ code: '22001', stage: 'telemetry_raw', table: 'telemetry_raw', column: 'mode',
+      machine_id: 20, seq: rejectedSeq, text_lengths: { mode: 66, machine_status: 7 } });
+    expect(JSON.stringify(events)).not.toContain(secret);
+    expect(refusal).not.toHaveProperty('detail');
+    expect(db.telemetry.map(r => r.machine_id)).toEqual([1, 3]);
+    expect(db.hourly.size).toBe(2);
+    const quarantine = JSON.parse(fs.readFileSync(path.join(dir, 'quarantine.ndjson'), 'utf8').trim());
+    expect(quarantine).toMatchObject({ reason: 'database_rejected', code: '22001', stage: 'telemetry_raw',
+      column: 'mode', text_lengths: { mode: 66 }, record: { s: rejectedSeq, r: { mode: secret } } });
+    // The private recovery record keeps the original; public logs contain only diagnostics.
+    expect(journal.stats().pending).toBe(0);
+    journal.close();
+  });
+
+  test('alarm rejection identifies its write stage when PostgreSQL omits the column name', async () => {
+    const events = [];
+    const { db, journal, flusher } = setup(undefined, undefined, (level, message, meta) => events.push({ level, message, ...meta }));
+    const bad = reading(20, 2);
+    bad.a = { machineId: 20, companyId: 4, shiftId: 1, at: 2,
+      opens: [{ alarm_type: 'A'.repeat(70), alarm_code: 'SV0401', alarm_severity: 'CRITICAL', alarm_message: 'PRIVATE ALARM CONTENT' }] };
+    journal.append(reading(1, 1)); journal.append(bad); journal.append(reading(3, 3));
+    db.refuseQuery = (sql, params) => sql.includes('INSERT INTO machine_alarms') && params[1] === 20
+      ? Object.assign(new Error('value too long for type character varying(50)'), { code: '22001' }) : null;
+    await drainPasses(flusher);
+    const refusal = events.find(e => e.message === 'quarantined a reading the database refused');
+    expect(refusal).toMatchObject({ code: '22001', stage: 'machine_alarms',
+      // Lengths describe the submitted values, including the original type
+      // preserved in TEXT, rather than the unnormalized device fields.
+      text_lengths: { alarm_type: 50, alarm_code: 6, severity: 8, message: 104 } });
+    expect(refusal).not.toHaveProperty('column');
+    expect(JSON.stringify(events)).not.toContain('PRIVATE ALARM CONTENT');
+    expect(db.telemetry.map(r => r.machine_id)).toEqual([1, 3]);
+    expect(db.alarms).toHaveLength(0);
+    journal.close();
+  });
+
+  test.each(['seed', 'update', 'commit'])('%s checkpoint/transaction data errors keep readings pending instead of quarantining them', async stage => {
+    const { dir, db, journal, flusher } = setup();
+    journal.append(reading(1, 1)); journal.append(reading(2, 2));
+    db.refuseQuery = sql => (
+      (stage === 'seed' && sql.includes('INSERT INTO ingest_checkpoint') && sql.includes('DO NOTHING')) ||
+      (stage === 'update' && sql.includes('INSERT INTO ingest_checkpoint') && sql.includes('DO UPDATE')) ||
+      (stage === 'commit' && sql === 'COMMIT')
+    ) ? Object.assign(new Error('value too long for type character varying(50)'), { code: '22001' }) : null;
+    await expect(flusher.pass()).rejects.toMatchObject({ code: '22001', ingestStage: stage === 'commit' ? 'transaction' : 'ingest_checkpoint' });
+    expect(flusher.stats().bad_records).toBe(0);
+    expect(db.telemetry).toHaveLength(0);
+    expect(db.checkpoint.size).toBe(0);
+    expect(journal.stats().pending).toBe(2);
+    expect(fs.existsSync(path.join(dir, 'quarantine.ndjson'))).toBe(false);
+    db.refuseQuery = null;
+    await drainPasses(flusher);
+    expect(db.telemetry.map(r => r.machine_id)).toEqual([1, 2]);
+    journal.close();
+  });
+
+  test('quarantine failure leaves the refused reading in the journal and does not advance its checkpoint', async () => {
+    const { db, journal, flusher } = setup();
+    journal.append(reading(20, 2, { mode: 'POISON' }));
+    db.poison = 'POISON';
+    const quarantine = journal.quarantine;
+    journal.quarantine = () => { throw new Error('quarantine fsync failed'); };
+    await expect(flusher.pass()).rejects.toThrow('quarantine fsync failed');
+    expect(db.telemetry).toHaveLength(0);
+    expect(db.checkpoint.size).toBe(0);
+    expect(journal.stats().pending).toBe(1);
+    journal.quarantine = quarantine;
+    await drainPasses(flusher);
+    expect(journal.stats().pending).toBe(0);
+    journal.close();
   });
 
   test('late and out-of-order readings go to telemetry_late, not to live data', async () => {
