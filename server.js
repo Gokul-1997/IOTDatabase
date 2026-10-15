@@ -4,7 +4,7 @@ import { startHealthServer, setSources } from './health.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
 import { TELEMETRY_COLUMNS, telemetryInsert } from './buffer.js';
-import { missingTelemetryColumns, missingTables } from './src/lib/schema-check.js';
+import { missingTelemetryColumns, missingAlarmColumns, missingTables } from './src/lib/schema-check.js';
 import { createJournal } from './src/lib/journal.js';
 import { createFlusher } from './src/lib/flusher.js';
 import { createShiftCache } from './src/lib/shifts.js';
@@ -43,10 +43,13 @@ export async function startServer(config) {
        queued on the broker (persistent session) until it is fixed. */
     const missing = await missingTelemetryColumns(pool, TELEMETRY_COLUMNS);
     const missingT = await missingTables(pool, ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings', 'ingest_gaps']);
-    if (missing.length || missingT.length) {
-      log('error', 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',
-        { missing_columns: missing, missing_tables: missingT });
-      process.exit(1);
+    const missingA = await missingAlarmColumns(pool);
+    if (missing.length || missingT.length || missingA.length) {
+      log('error', missingA.length
+        ? 'the alarm continuity schema is missing — apply Backend migration 047_alarm_notifications.sql (Backend: npm run migrate), then restart the collector'
+        : 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',
+      { missing_columns: missing, missing_tables: missingT, missing_alarm_columns: missingA });
+      return process.exit(1);
     }
 
     const { recovered } = journal.open();

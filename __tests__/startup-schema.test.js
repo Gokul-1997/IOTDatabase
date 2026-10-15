@@ -1,0 +1,44 @@
+import { jest } from '@jest/globals';
+
+// Mock service boundaries before importing the entry module: this test must
+// never read .env, open the operational journal or contact live services.
+const query = jest.fn(async sql => {
+  if (sql.includes("table_name = 'telemetry_raw'")) return { rows: [{ column_name: 'machine_id' }] };
+  if (sql.includes("to_regclass('machine_alarms')")) return { rows: [{ column_name: 'started_at' }] };
+  return { rows: ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings', 'ingest_gaps']
+    .map(table_name => ({ table_name })) };
+});
+const open = jest.fn();
+const writerStart = jest.fn();
+const shiftStart = jest.fn();
+const startMQTT = jest.fn();
+const startHealthServer = jest.fn();
+jest.unstable_mockModule('../db.js', () => ({ pool: { query } }));
+jest.unstable_mockModule('../redis.js', () => ({ redis: {} }));
+jest.unstable_mockModule('../buffer.js', () => ({ TELEMETRY_COLUMNS: ['machine_id'], telemetryInsert: jest.fn() }));
+jest.unstable_mockModule('../mqtt.js', () => ({ startMQTT, stopMQTT: jest.fn(), initIngest: jest.fn(), ingressLag: {} }));
+jest.unstable_mockModule('../health.js', () => ({ startHealthServer, setSources: jest.fn() }));
+jest.unstable_mockModule('../src/lib/journal.js', () => ({ createJournal: () => ({ open }) }));
+jest.unstable_mockModule('../src/lib/flusher.js', () => ({ createFlusher: () => ({ start: writerStart }) }));
+jest.unstable_mockModule('../src/lib/shifts.js', () => ({ createShiftCache: () => ({ start: shiftStart }) }));
+const existingSignals = new Map(['SIGINT', 'SIGTERM'].map(signal => [signal, new Set(process.listeners(signal))]));
+const { startServer } = await import('../server.js');
+
+afterAll(() => {
+  for (const [signal, existing] of existingSignals) {
+    for (const listener of process.listeners(signal)) if (!existing.has(listener)) process.removeListener(signal, listener);
+  }
+});
+
+test('missing migration 047 exits before journal, writer, health server or MQTT admission starts', async () => {
+  const exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await startServer({});
+    expect(exit).toHaveBeenCalledWith(1);
+    const log = JSON.parse(error.mock.calls[0][0]);
+    expect(log.msg).toContain('047_alarm_notifications.sql');
+    expect(log.missing_alarm_columns).toEqual(['notification_continuity_started_at']);
+    for (const sideEffect of [open, writerStart, shiftStart, startHealthServer, startMQTT]) expect(sideEffect).not.toHaveBeenCalled();
+  } finally { exit.mockRestore(); error.mockRestore(); }
+});

@@ -7,7 +7,7 @@
  */
 
 import { jest } from '@jest/globals';
-import { missingTelemetryColumns } from '../src/lib/schema-check.js';
+import { missingTelemetryColumns, missingAlarmColumns } from '../src/lib/schema-check.js';
 
 const poolWith = names => ({
   query: jest.fn(async () => ({ rows: names.map(column_name => ({ column_name })) }))
@@ -47,4 +47,16 @@ test('every column the buffer writes is one the check verifies', async () => {
     'apc_battery_status'
   ]));
   expect(new Set(TELEMETRY_COLUMNS).size).toBe(TELEMETRY_COLUMNS.length);
+});
+
+test('a collector deployed before migration 047 identifies its missing alarm continuity column', async () => {
+  const pool = poolWith(['id', 'company_id', 'machine_id', 'started_at', 'ended_at']);
+  expect(await missingAlarmColumns(pool)).toEqual(['notification_continuity_started_at']);
+  const [sql] = pool.query.mock.calls[0];
+  expect(sql).toMatch(/attrelid = to_regclass\('machine_alarms'\)/);
+  expect(sql).toMatch(/attnum > 0 AND NOT attisdropped/);
+});
+
+test('migration 047 satisfies the alarm schema guard', async () => {
+  expect(await missingAlarmColumns(poolWith(['notification_continuity_started_at']))).toEqual([]);
 });

@@ -40,7 +40,8 @@ try {
       PRIMARY KEY(machine_id, shift_id, hour_start));
     CREATE TABLE ingest_checkpoint(collector_id text PRIMARY KEY, last_seq bigint NOT NULL, updated_at timestamptz DEFAULT now());
     CREATE TABLE machine_alarms(id bigserial PRIMARY KEY, company_id int, machine_id int, shift_id int,
-      alarm_type varchar(50), alarm_code varchar(50), severity varchar(20), message text, started_at timestamptz, created_at timestamptz, ended_at timestamptz);
+      alarm_type varchar(50), alarm_code varchar(50), severity varchar(20), message text, started_at timestamptz, created_at timestamptz, ended_at timestamptz,
+      notification_continuity_started_at timestamptz);
     CREATE UNIQUE INDEX alarm_open ON machine_alarms(machine_id, COALESCE(alarm_code, alarm_type)) WHERE ended_at IS NULL;
     CREATE TABLE energy_meter_readings(machine_id int, company_id int, read_at timestamptz,
       ${METER_FIELDS.map(([column]) => `${column} double precision`).join(',')}, PRIMARY KEY(machine_id,read_at));`);

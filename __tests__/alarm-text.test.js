@@ -93,4 +93,27 @@ describe('journal alarm lifecycle uses the stored key', () => {
     expect(alarmTransition({ ...base, prev: { alarm: true, alarm_codes: [alarmKey(first)] },
       isAlarm: true, alarms: [first] })).toBeNull();
   });
+
+  test('unknown baselines reset only kept open alarm notification continuity without rewriting history', async () => {
+    const calls = [];
+    const client = { query: async (sql, values) => { calls.push([sql, values]); return { rows: [], rowCount: 1 }; } };
+    await writeAlarmTransition(client, alarmTransition({ ...base, prev: null, isAlarm: true, alarms: [first] }));
+    const updates = calls.filter(([sql]) => sql.includes('notification_continuity_started_at'));
+    expect(updates).toHaveLength(1);
+    const [sql, values] = updates[0];
+    expect(sql).toContain('GREATEST(notification_continuity_started_at, to_timestamp($3))');
+    expect(sql).toContain('company_id = $1 AND machine_id = $2 AND ended_at IS NULL AND started_at <= to_timestamp($3)');
+    expect(sql).toContain('COALESCE(alarm_code, alarm_type) = ANY($4::text[])');
+    expect(sql).not.toMatch(/SET\s+started_at/);
+    expect(values).toEqual([base.companyId, base.machineId, base.deviceTime, [alarmKey(first)]]);
+  });
+
+  test('known baseline changes and an empty reconciliation do not reset notification continuity', async () => {
+    const calls = [];
+    const client = { query: async (sql, values) => { calls.push([sql, values]); return { rows: [], rowCount: 1 }; } };
+    await writeAlarmTransition(client, alarmTransition({ ...base,
+      prev: { alarm: true, alarm_codes: [alarmKey(first)] }, isAlarm: true, alarms: [first, second] }));
+    await writeAlarmTransition(client, alarmTransition({ ...base, prev: null, isAlarm: false, alarms: [] }));
+    expect(calls.some(([sql]) => sql.includes('notification_continuity_started_at'))).toBe(false);
+  });
 });
