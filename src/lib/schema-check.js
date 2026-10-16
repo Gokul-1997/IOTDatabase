@@ -31,8 +31,8 @@ export async function missingTelemetryColumns(pool, columns) {
   return columns.filter(c => !have.has(c));
 }
 
-/** Migration 047 must precede collectors which reconcile alarm continuity.
- * Missing this column is a deployment/schema error, never a bad reading. */
+/** Migration 048 must precede collectors which persist priority events.
+ * Missing columns are deployment errors, never bad machine readings. */
 export async function missingAlarmColumns(pool) {
   const { rows } = await pool.query(
     `SELECT attname AS column_name FROM pg_attribute
@@ -40,7 +40,8 @@ export async function missingAlarmColumns(pool) {
         AND attnum > 0 AND NOT attisdropped`
   );
   const have = new Set(rows.map(row => row.column_name));
-  return ['notification_continuity_started_at'].filter(column => !have.has(column));
+  return ['notification_continuity_started_at', 'notification_priority_changed_at',
+    'severity_observed_at', 'severity_received_at', 'ended_received_at'].filter(column => !have.has(column));
 }
 
 /** Tables in `tables` that do not exist on the search path. */

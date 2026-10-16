@@ -30,15 +30,17 @@ afterAll(() => {
   }
 });
 
-test('missing migration 047 exits before journal, writer, health server or MQTT admission starts', async () => {
+test('missing migration 048 exits before journal, writer, health server or MQTT admission starts', async () => {
   const exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
   const error = jest.spyOn(console, 'error').mockImplementation(() => {});
   try {
     await startServer({});
     expect(exit).toHaveBeenCalledWith(1);
     const log = JSON.parse(error.mock.calls[0][0]);
-    expect(log.msg).toContain('047_alarm_notifications.sql');
-    expect(log.missing_alarm_columns).toEqual(['notification_continuity_started_at']);
+    expect(log.msg).toContain('048_alarm_notification_policies.sql');
+    expect(log.missing_alarm_columns).toEqual(['notification_continuity_started_at',
+      'notification_priority_changed_at', 'severity_observed_at', 'severity_received_at', 'ended_received_at']);
+    expect(log.missing_tables).toContain('alarm_notification_events');
     for (const sideEffect of [open, writerStart, shiftStart, startHealthServer, startMQTT]) expect(sideEffect).not.toHaveBeenCalled();
   } finally { exit.mockRestore(); error.mockRestore(); }
 });

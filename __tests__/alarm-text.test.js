@@ -1,4 +1,4 @@
-import { alarmFields, alarmKey } from '../src/lib/alarm-text.js';
+import { alarmFields, alarmKey, alarmSeverityClass } from '../src/lib/alarm-text.js';
 import { alarmKey as transitionKey, alarmTransition, writeAlarmTransition } from '../src/lib/alarm-transition.js';
 
 describe('alarm text matches the persisted VARCHAR limits', () => {
@@ -81,16 +81,17 @@ describe('journal alarm lifecycle uses the stored key', () => {
     expect(changed.opens).toEqual([]);
     expect(changed.closes).toEqual([alarmKey(first)]);
     await writeAlarmTransition(client, changed);
-    expect(calls.at(-1)[1][3]).toEqual([inserts[0][1][3]]);
+    expect(calls.findLast(([sql]) => sql.startsWith('UPDATE machine_alarms SET ended_at'))[1][3]).toEqual([inserts[0][1][3]]);
     const reopen = alarmTransition({ ...base, deviceTime: base.deviceTime + 2,
       prev: { alarm: true, alarm_codes: [alarmKey(second)] }, isAlarm: true, alarms: [first, second] });
     expect(reopen.opens).toEqual([first]);
     await writeAlarmTransition(client, reopen);
-    expect(calls.at(-1)[1][3]).toBe(initial.keep[0]);
+    expect(calls.findLast(([sql]) => sql.startsWith('INSERT INTO machine_alarms'))[1][3]).toBe(initial.keep[0]);
   });
 
   test('unchanged long alarms write no transition on each reading', () => {
-    expect(alarmTransition({ ...base, prev: { alarm: true, alarm_codes: [alarmKey(first)] },
+    expect(alarmTransition({ ...base, prev: { alarm: true, alarm_codes: [alarmKey(first)],
+      alarm_severities: { [alarmKey(first)]: 'NORMAL' } },
       isAlarm: true, alarms: [first] })).toBeNull();
   });
 
@@ -115,5 +116,83 @@ describe('journal alarm lifecycle uses the stored key', () => {
       prev: { alarm: true, alarm_codes: [alarmKey(first)] }, isAlarm: true, alarms: [first, second] }));
     await writeAlarmTransition(client, alarmTransition({ ...base, prev: null, isAlarm: false, alarms: [] }));
     expect(calls.some(([sql]) => sql.includes('notification_continuity_started_at'))).toBe(false);
+  });
+});
+
+describe('notification priority transitions', () => {
+  const base = { companyId: 4, machineId: 7, shiftId: 1, deviceTime: 1791967249,
+    receivedAt: '2026-10-14T08:40:50.100Z' };
+  const normal = { alarm_code: 'EX1000', alarm_type: 'Door open', alarm_severity: 'NORMAL' };
+  const critical = { ...normal, alarm_severity: ' critical ' };
+  const prev = { alarm: true, alarm_codes: ['EX1000'], alarm_severities: { EX1000: 'NORMAL' } };
+
+  test.each([
+    ['CRITICAL', 'critical'], [' fatal ', 'critical'], ['EMERGENCY', 'critical'],
+    ['INFO', 'info'], ['INFORMATION', 'info'], ['INFORMATIONAL', 'info'], ['LOW', 'info'], ['MESSAGE', 'info'],
+    ['HIGH', 'noncritical'], ['NORMAL', 'noncritical'], ['MEDIUM', 'noncritical'], ['', 'noncritical'],
+    ['unknown-controller-value', 'noncritical']
+  ])('%s follows the shared %s classification', (severity, expected) => {
+    expect(alarmSeverityClass(severity)).toBe(expected);
+  });
+
+  test('same-code critical escalation retains the occurrence and carries true receipt time', () => {
+    const change = alarmTransition({ ...base, prev, isAlarm: true, alarms: [critical] });
+    expect(change.opens).toEqual([]);
+    expect(change.closes).toEqual([]);
+    expect(change.updates).toEqual([critical]);
+    expect(change.receivedAt).toBe(base.receivedAt);
+    expect(alarmFields(critical).severity).toBe('CRITICAL');
+    expect(alarmTransition({ ...base, prev: { ...prev, alarm_severities: { EX1000: 'CRITICAL' } },
+      isAlarm: true, alarms: [critical] })).toBeNull();
+  });
+
+  test('pre-upgrade baselines reconcile severity once without inventing a new occurrence', () => {
+    const change = alarmTransition({ ...base, prev: { alarm: true, alarm_codes: ['EX1000'] }, isAlarm: true, alarms: [critical] });
+    expect(change.opens).toEqual([]);
+    expect(change.updates).toEqual([critical]);
+  });
+
+  test('a new short critical occurrence creates a durable event before its later clear', async () => {
+    const calls = [];
+    const client = { query: async (sql, values) => {
+      calls.push([sql, values]);
+      return { rows: sql.startsWith('INSERT INTO machine_alarms') ? [{ id: '42' }]
+        : sql.startsWith('INSERT INTO alarm_notification_events') ? [{ id: '81' }] : [] };
+    } };
+    await writeAlarmTransition(client, alarmTransition({ ...base, prev: { alarm: false, alarm_codes: [] }, isAlarm: true, alarms: [critical] }));
+    await writeAlarmTransition(client, alarmTransition({ ...base, deviceTime: base.deviceTime + 3,
+      prev: { ...prev, alarm_severities: { EX1000: 'CRITICAL' } }, isAlarm: false, alarms: [] }));
+    const events = calls.filter(([sql]) => sql.startsWith('INSERT INTO alarm_notification_events'));
+    expect(events).toHaveLength(1);
+    expect(events[0][1]).toEqual(['42', 4, 7, 'critical', base.deviceTime, base.receivedAt,
+      'Door open', 'EX1000', 'CRITICAL', null]);
+    expect(calls.some(([sql]) => sql.includes("pg_notify('cnc_alarm_events'"))).toBe(true);
+    expect(calls.at(-1)[0]).toContain('SET ended_at');
+  });
+
+  test('cold discovery of unchanged historical critical severity does not append an alert event', async () => {
+    const calls = [];
+    const client = { query: async (sql, values) => {
+      calls.push([sql, values]);
+      return { rows: sql.startsWith('WITH target') ? [{ id: '42', previous_class: 'critical' }] : [] };
+    } };
+    await writeAlarmTransition(client, alarmTransition({ ...base, prev: null, isAlarm: true, alarms: [critical] }));
+    expect(calls.some(([sql]) => sql.startsWith('INSERT INTO alarm_notification_events'))).toBe(false);
+    expect(calls.some(([sql]) => sql.includes('pg_notify'))).toBe(false);
+  });
+
+  test('a same-occurrence class change persists a snapshot and monotonic update guard', async () => {
+    const calls = [];
+    const client = { query: async (sql, values) => {
+      calls.push([sql, values]);
+      return { rows: sql.startsWith('WITH target') ? [{ id: '42', previous_class: 'noncritical' }]
+        : sql.startsWith('INSERT INTO alarm_notification_events') ? [{ id: '81' }] : [] };
+    } };
+    await writeAlarmTransition(client, alarmTransition({ ...base, prev, isAlarm: true, alarms: [critical] }));
+    expect(calls[0][0]).toContain('severity_observed_at < to_timestamp($3)');
+    expect(calls[0][0]).toContain('severity_received_at');
+    expect(calls[0][1]).toContain(base.receivedAt);
+    expect(calls[1][1][0]).toBe('42');
+    expect(calls[1][1][3]).toBe('critical');
   });
 });

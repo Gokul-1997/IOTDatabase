@@ -4,6 +4,7 @@ import { energyStep } from './energy-step.js';
 import { powerSignals, meterReading } from './power-signals.js';
 import { conditionSignals, isAlarming, isDisconnected, controllerIdentity, focasResult, activeAlarms } from './condition-signals.js';
 import { alarmKey, alarmTransition } from './alarm-transition.js';
+import { alarmFields } from './alarm-text.js';
 import { fingerprint, validDeviceTime } from './admission.js';
 
 const RUN_STATES = new Set(['RUN', 'RUNNING', 'CUTTING']);
@@ -186,6 +187,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
       machine_status: normalized.machine_status,
       alarm:          normalized.alarm,
       alarm_codes:    alarmCodes,
+      alarm_severities: Object.fromEntries(alarmsNow.map(alarm => [alarmKey(alarm), alarmFields(alarm).severity])),
       mode,
       spindle_load:   payload.spindle_load ?? 0,
       feed_rate:      payload.feed_rate    ?? 0,
@@ -249,7 +251,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   };
 
   const alarm = alarmTransition({ prev, alarms: alarmsNow, isAlarm: normalized.alarm,
-    companyId: machine.company_id, machineId: machine.id, shiftId, deviceTime });
+    companyId: machine.company_id, machineId: machine.id, shiftId, deviceTime, receivedAt });
   const reading = meterReading(payload);
   const meterDue = reading && (!prev?.meter_recorded_at || deviceTime - prev.meter_recorded_at >= 15);
   livePayload.meter_recorded_at = meterDue ? deviceTime : (prev?.meter_recorded_at ?? null);

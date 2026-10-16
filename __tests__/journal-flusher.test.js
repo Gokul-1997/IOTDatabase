@@ -18,7 +18,7 @@ const quiet = () => {};
  * failure part-way through a batch leaves nothing behind — as Postgres does.
  */
 function fakeDb() {
-  const db = { telemetry: [], late: [], alarms: [], meters: [], gaps: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, refuseQuery: null, queries: 0, loseCommitReply: false };
+  const db = { telemetry: [], late: [], alarms: [], alarmEvents: [], notifications: [], meters: [], gaps: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, refuseQuery: null, queries: 0, loseCommitReply: false };
   db.pool = {
     async query(sql, params) {
       if (db.down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
@@ -73,8 +73,15 @@ function fakeDb() {
             return {};
           }
           if (sql.includes('INSERT INTO ingest_gaps')) { staged.push(() => db.gaps.push(params)); return {}; }
+          if (sql.includes('INSERT INTO alarm_notification_events')) {
+            staged.push(() => db.alarmEvents.push(params)); return { rows: [{ id: 1 }] };
+          }
+          if (sql.includes("pg_notify('cnc_alarm_events'")) {
+            staged.push(() => db.notifications.push('cnc_alarm_events')); return { rows: [] };
+          }
           if (sql.includes('machine_alarms')) {
-            staged.push(() => db.alarms.push({ sql, params })); return {};
+            staged.push(() => db.alarms.push({ sql, params }));
+            return { rows: sql.startsWith('INSERT INTO machine_alarms') ? [{ id: 1 }] : [] };
           }
           if (sql.includes('INSERT INTO energy_meter_readings')) {
             staged.push(() => db.meters.push(params)); return {};
@@ -355,11 +362,13 @@ test('alarm/meter operations survive DB outage and lost COMMIT reply exactly wit
   db.down = true;
   await expect(flusher.pass()).rejects.toThrow();
   expect(db.alarms).toHaveLength(0); expect(db.meters).toHaveLength(0);
+  expect(db.alarmEvents).toHaveLength(0); expect(db.notifications).toHaveLength(0);
   db.down = false; db.loseCommitReply = true;
   await expect(flusher.pass()).rejects.toThrow('COMMIT response lost');
   expect(db.alarms).toHaveLength(1); expect(db.meters).toHaveLength(1);
   await drainPasses(flusher);
   expect(db.telemetry).toHaveLength(1); expect(db.alarms).toHaveLength(1); expect(db.meters).toHaveLength(1);
+  expect(db.alarmEvents).toHaveLength(1); expect(db.notifications).toEqual(['cnc_alarm_events']);
   journal.close();
 });
 

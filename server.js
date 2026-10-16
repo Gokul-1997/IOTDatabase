@@ -42,11 +42,11 @@ export async function startServer(config) {
        applied, every write would fail. Not subscribing leaves the messages
        queued on the broker (persistent session) until it is fixed. */
     const missing = await missingTelemetryColumns(pool, TELEMETRY_COLUMNS);
-    const missingT = await missingTables(pool, ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings', 'ingest_gaps']);
+    const missingT = await missingTables(pool, ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings', 'ingest_gaps', 'alarm_notification_events']);
     const missingA = await missingAlarmColumns(pool);
     if (missing.length || missingT.length || missingA.length) {
-      log('error', missingA.length
-        ? 'the alarm continuity schema is missing — apply Backend migration 047_alarm_notifications.sql (Backend: npm run migrate), then restart the collector'
+      log('error', missingA.length || missingT.includes('alarm_notification_events')
+        ? 'the alarm priority event schema is missing — apply Backend migration 048_alarm_notification_policies.sql (Backend: npm run migrate), then restart the collector'
         : 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',
       { missing_columns: missing, missing_tables: missingT, missing_alarm_columns: missingA });
       return process.exit(1);

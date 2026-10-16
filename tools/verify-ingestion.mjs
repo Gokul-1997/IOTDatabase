@@ -32,6 +32,10 @@ try {
   const text = new Set(['machine_status', 'mode']);
   await pool.query(`CREATE TABLE telemetry_raw (${TELEMETRY_COLUMNS.map(column =>
     `${column} ${column === 'received_at' ? 'timestamptz' : column === 'alarm' ? 'boolean' : json.has(column) ? 'jsonb' : text.has(column) ? 'text' : 'double precision'}`).join(',')});
+    CREATE TABLE companies(id int PRIMARY KEY);
+    CREATE TABLE users(id int PRIMARY KEY);
+    INSERT INTO companies VALUES(4);
+    CREATE TABLE notifications(id bigserial PRIMARY KEY,company_id int,user_id int);
     CREATE TABLE machines(id int PRIMARY KEY,company_id int NOT NULL, UNIQUE(company_id,id));
     INSERT INTO machines VALUES(7,4);
     CREATE TABLE telemetry_late(machine_id int, company_id int, device_time bigint, received_at timestamptz, reason text, payload jsonb);
@@ -48,11 +52,18 @@ try {
   const migration = fs.readFileSync(new URL('../../Backend/src/migrations/043_ingest_gaps.sql', import.meta.url), 'utf8');
   await pool.query('CREATE ROLE machine_api_user NOLOGIN');
   await pool.query(migration); await pool.query(migration); // additive/idempotent
+  await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/047_alarm_notifications.sql', import.meta.url), 'utf8'));
+  await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/048_alarm_notification_policies.sql', import.meta.url), 'utf8'));
   const rights = (await pool.query(`SELECT has_table_privilege('machine_api_user','ingest_gaps','SELECT') AS can_read,
     has_table_privilege('machine_api_user','ingest_gaps','INSERT') AS can_insert,
     has_table_privilege('machine_api_user','ingest_gaps','UPDATE') AS can_update,
     has_table_privilege('machine_api_user','ingest_gaps','DELETE') AS can_delete`)).rows[0];
   assert.deepEqual(rights, { can_read: true, can_insert: true, can_update: false, can_delete: false });
+  const eventRights = (await pool.query(`SELECT has_table_privilege('machine_api_user','alarm_notification_events','SELECT') AS can_read,
+    has_table_privilege('machine_api_user','alarm_notification_events','INSERT') AS can_insert,
+    has_table_privilege('machine_api_user','alarm_notification_events','UPDATE') AS can_update,
+    has_table_privilege('machine_api_user','alarm_notification_events','DELETE') AS can_delete`)).rows[0];
+  assert.deepEqual(eventRights, { can_read: true, can_insert: true, can_update: false, can_delete: false });
   journal = createJournal({ dir: path.join(directory, 'journal') }); journal.open();
   const shifts = { shiftFor: () => 1, shiftsOf: () => [{ id: 1, start: 0, end: 86399 }] };
   const machine = { id: 7, company_id: 4 };
@@ -83,6 +94,12 @@ try {
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM energy_meter_readings')).rows[0].n, 1);
   const alarm = (await pool.query('SELECT * FROM machine_alarms')).rows;
   assert.equal(alarm.length, 1); assert.equal(alarm[0].alarm_code, 'SV0401'); assert.ok(alarm[0].ended_at);
+  const alarmEvents = (await pool.query('SELECT * FROM alarm_notification_events')).rows;
+  assert.equal(alarmEvents.length, 1);
+  assert.equal(alarmEvents[0].alarm_id, alarm[0].id);
+  assert.equal(alarmEvents[0].severity_class, 'critical');
+  assert.equal(alarmEvents[0].occurred_at.getTime(), (time - 1) * 1000);
+  assert.equal(alarmEvents[0].received_at.getTime(), now);
   assert.equal((await pool.query('SELECT sum(produced_qty)::int AS n FROM production_hourly')).rows[0].n, 2);
   assert.equal(journal.stats().pending, 0);
   // Reconnect across a day: preserve provenance; no inferred shift allocation.
@@ -136,7 +153,7 @@ try {
   await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, deviceTime: transitionBase.deviceTime + 5,
     prev: { alarm: true, alarm_codes: longCodes.map(alarmKey) }, alarms: [longCodes[1]], isAlarm: true }));
   assert.deepEqual((await pool.query('SELECT alarm_code FROM machine_alarms WHERE ended_at IS NULL')).rows.map(r => r.alarm_code), [alarmKey(longCodes[1])]);
-  console.log('PASS disposable PostgreSQL: raw + hourly + alarm open/close + meter commit exactly once through Redis outage, DB outage and lost COMMIT reply; 043 gap provenance, tenant integrity and collector grants; real VARCHAR(50) alarm fields preserve Unicode and full text, distinguish long labels, close, reopen and reconcile.');
+  console.log('PASS disposable PostgreSQL: raw + hourly + alarm open/close + durable priority event + meter commit exactly once through Redis outage, DB outage and lost COMMIT reply; 043/048 tenant integrity and collector grants; short critical outbox survives clear; real VARCHAR(50) alarm fields preserve Unicode and full text, distinguish long labels, close, reopen and reconcile.');
 } finally {
   journal?.close();
   await pool?.end();

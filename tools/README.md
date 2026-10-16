@@ -7,7 +7,7 @@ permission. Tests do not use application environment files or configured service
 
 `node tools/verify-ingestion.mjs` starts and removes its own Unix-socket-only
 PostgreSQL cluster. It verifies raw telemetry, hourly parts, alarm transitions
-and meter rows through Redis unavailability, database failure and a lost COMMIT
+and meter rows, including durable short-critical priority events, through Redis unavailability, database failure and a lost COMMIT
 response. It is a PostgreSQL transaction test, not Timescale version validation.
 
 `node tools/benchmark-admission.mjs 10000 1000` measures the actual message
@@ -29,7 +29,7 @@ net change unsuitable as a peak-memory estimate. These measurements vary with
 local workload/cache; neither measures broker or database capacity or proves
 1,000 machines at 1 Hz.
 
-Apply Backend migration 043 before deploying this build; startup checks require `ingest_gaps`.
+Apply Backend migrations through **048** before deploying this build. Startup checks require `ingest_gaps`, the alarm continuity and priority observation columns, and `alarm_notification_events`. Accepted critical opens and changes into critical priority persist an outbox event with the same journal transaction; PostgreSQL NOTIFY wakes the API only after commit. Unchanged readings produce no new alarm operation. See the Backend `docs/ALARM_NOTIFICATIONS.md` guide for policy configuration and deployment order.
 
 Alarm text writers now match the existing VARCHAR(50) type/code contract and preserve full original descriptions in TEXT. For rejected records, `node tools/inspect-quarantine.mjs <file> --seq <sequence>` provides private read-only IDs/field-length diagnostics without loading environment or connecting services. See [quarantine text correction and recovery limits](../deploy/QUARANTINE_TEXT_FIX.md). Restarting does not automatically replay records the checkpoint has already passed.
 Gap records are queryable by company/machine/time and commit with the journal checkpoint.

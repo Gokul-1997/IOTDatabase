@@ -29,9 +29,17 @@ export function alarmFields(alarm) {
   return {
     alarmType,
     alarmCode,
-    severity: prefix(String(alarm?.alarm_severity || 'NORMAL').toUpperCase(), SEVERITY_LIMIT),
+    severity: prefix(String(alarm?.alarm_severity || 'NORMAL').trim().toUpperCase() || 'NORMAL', SEVERITY_LIMIT),
     message: details.length ? details.join('\n') : null
   };
+}
+
+/** The notification policy uses the same three classes as alarm reporting. */
+export function alarmSeverityClass(severity) {
+  const value = String(severity || '').trim().toUpperCase();
+  if (['CRITICAL', 'FATAL', 'EMERGENCY'].includes(value)) return 'critical';
+  if (['INFO', 'INFORMATION', 'INFORMATIONAL', 'LOW', 'MESSAGE'].includes(value)) return 'info';
+  return 'noncritical';
 }
 
 export function alarmKey(alarm) {

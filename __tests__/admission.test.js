@@ -159,3 +159,23 @@ test('a long reconnect gap preserves counter provenance without inventing runtim
   expect(journal.read(100).records[0].gap.unallocated_parts).toBe(8);
   journal.close();
 });
+
+test('priority class changes are journaled with receipt time; unchanged readings need no alarm write', async () => {
+  const { journal, processor } = fixture({ redis: { isReady: false } });
+  try {
+    const data = { machine_status: 'STOP', stat_alarm: 1, alarm_code: 'EX1000', alarm_type: 'Door open' };
+    await processor.handleMessage('key', { ...data, time: time - 3, alarm_severity: 'NORMAL' }, now - 3000);
+    await processor.handleMessage('key', { ...data, time: time - 2, alarm_severity: 'CRITICAL' }, now - 2000);
+    await processor.handleMessage('key', { ...data, time: time - 1, alarm_severity: 'CRITICAL' }, now - 1000);
+    await processor.handleMessage('key', { machine_status: 'RUN', time, stat_alarm: 0 }, now);
+    const records = journal.read(100).records;
+    expect(records[0].a.opens).toHaveLength(1);
+    expect(records[1].a.opens).toEqual([]);
+    expect(records[1].a.updates[0].alarm_severity).toBe('CRITICAL');
+    expect(records[1].a.receivedAt).toBe(new Date(now - 2000).toISOString());
+    expect(records[1].state.alarm_severities).toEqual({ EX1000: 'CRITICAL' });
+    expect(records[2].a).toBeUndefined();
+    expect(records[3].a.closes).toEqual(['EX1000']);
+    expect(records[3].state.alarm_severities).toEqual({});
+  } finally { journal.close(); }
+});

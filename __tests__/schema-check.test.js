@@ -49,14 +49,16 @@ test('every column the buffer writes is one the check verifies', async () => {
   expect(new Set(TELEMETRY_COLUMNS).size).toBe(TELEMETRY_COLUMNS.length);
 });
 
-test('a collector deployed before migration 047 identifies its missing alarm continuity column', async () => {
+test('a collector deployed before migration 048 identifies its missing alarm columns', async () => {
   const pool = poolWith(['id', 'company_id', 'machine_id', 'started_at', 'ended_at']);
-  expect(await missingAlarmColumns(pool)).toEqual(['notification_continuity_started_at']);
+  expect(await missingAlarmColumns(pool)).toEqual(['notification_continuity_started_at',
+    'notification_priority_changed_at', 'severity_observed_at', 'severity_received_at', 'ended_received_at']);
   const [sql] = pool.query.mock.calls[0];
   expect(sql).toMatch(/attrelid = to_regclass\('machine_alarms'\)/);
   expect(sql).toMatch(/attnum > 0 AND NOT attisdropped/);
 });
 
-test('migration 047 satisfies the alarm schema guard', async () => {
-  expect(await missingAlarmColumns(poolWith(['notification_continuity_started_at']))).toEqual([]);
+test('migration 048 satisfies the alarm schema guard', async () => {
+  expect(await missingAlarmColumns(poolWith(['notification_continuity_started_at',
+    'notification_priority_changed_at', 'severity_observed_at', 'severity_received_at', 'ended_received_at']))).toEqual([]);
 });
