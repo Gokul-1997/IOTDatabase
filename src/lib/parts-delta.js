@@ -22,6 +22,14 @@ const MAX_PARTS_DELTA = 20;
 const GAP_RECOVERY_THRESHOLD_SEC = 300;  // 5 min — same as Redis TTL
 const MAX_PARTS_DELTA_GAP        = 5000; // effectively unlimited for gap recovery
 
+export function partsCountOf(value) {
+  if (!['number', 'string'].includes(typeof value) || !String(value).trim()) return null;
+  const number = Number(value);
+  // telemetry_raw.parts_count is PostgreSQL INT4. Live state and the durable
+  // row must reject the same values instead of publishing an unstorable count.
+  return Number.isSafeInteger(number) && number >= 0 && number <= 2147483647 ? number : null;
+}
+
 /**
  * @param {number} prevCount   - last known parts_count (from Redis or DB fallback)
  * @param {number} currCount   - current parts_count from MQTT payload
@@ -29,9 +37,9 @@ const MAX_PARTS_DELTA_GAP        = 5000; // effectively unlimited for gap recove
  */
 export function partsDelta(prevCount, currCount, gapSeconds = 0) {
   if (prevCount == null) return 0;          // first message of a session
-  const prev = Number(prevCount);
-  const curr = Number(currCount);
-  if (!Number.isFinite(prev) || !Number.isFinite(curr)) return 0;
+  const prev = partsCountOf(prevCount);
+  const curr = partsCountOf(currCount);
+  if (prev === null || curr === null) return 0;
 
   const isGapRecovery = gapSeconds >= GAP_RECOVERY_THRESHOLD_SEC;
   const maxDelta      = isGapRecovery ? MAX_PARTS_DELTA_GAP : MAX_PARTS_DELTA;

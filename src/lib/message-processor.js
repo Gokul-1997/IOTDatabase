@@ -1,5 +1,5 @@
 import { hourlySlices, istHourStart } from './hourly.js';
-import { partsDelta } from './parts-delta.js';
+import { partsDelta, partsCountOf } from './parts-delta.js';
 import { energyStep } from './energy-step.js';
 import { powerSignals, meterReading } from './power-signals.js';
 import { conditionSignals, isAlarming, isDisconnected, controllerIdentity, focasResult, activeAlarms } from './condition-signals.js';
@@ -24,12 +24,12 @@ export function createMessageProcessor({ journal, shifts, lookupMachine, hydrate
   log = () => {}, ingressLag, maxStaleMs = 300_000, maxDedup = 10_000, commandTimeoutMs = 250 }) {
   const states = journal.latestStates?.() || new Map();
   const accepted = new Map();
-  function seen(machineId, payload) {
-    const at = accepted.get(`${machineId}:${fingerprint(payload)}`);
+  function seen(machineId, hash) {
+    const at = accepted.get(`${machineId}:${hash}`);
     return at != null && Date.now() - at < 300_000;
   }
-  function remember(machineId, payload) {
-    accepted.set(`${machineId}:${fingerprint(payload)}`, Date.now());
+  function remember(machineId, hash) {
+    accepted.set(`${machineId}:${hash}`, Date.now());
     while (accepted.size > maxDedup) accepted.delete(accepted.keys().next().value);
   }
   async function baseline(machine) {
@@ -76,7 +76,8 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   const deviceTime = Number(payload.time);
   if (!validDeviceTime(deviceTime, receivedAtMs)) { count('invalid'); return; }
 
-  if (seen(machine.id, payload)) { count('duplicate'); return; }
+  const hash = fingerprint(payload);
+  if (seen(machine.id, hash)) { count('duplicate'); return; }
 
   /* The collector could not reach the controller, and says so. Its other
      values are whatever it last held, so storing them would record a dead
@@ -90,7 +91,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
 
   if (ingressLatencyMs > maxStaleMs) {
     await keepLate(machine, payload, deviceTime, receivedAt, 'stale', ingressLatencyMs);
-    remember(machine.id, payload);
+    remember(machine.id, hash);
     return;
   }
 
@@ -103,10 +104,9 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   const lastKey = `machine:${machine.id}:last_time`;
   const liveKey = `machine:${machine.id}:live`;
   const prev = await baseline(machine);
-  const hash = fingerprint(payload);
   if (prev && deviceTime < Number(prev.received_at)) {
     await keepLate(machine, payload, deviceTime, receivedAt, 'out_of_order', ingressLatencyMs);
-    remember(machine.id, payload);
+    remember(machine.id, hash);
     return;
   }
   if (prev && deviceTime === Number(prev.received_at) && prev.fingerprint === hash) {
@@ -116,7 +116,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   // only production_hourly, which is per shift, has nothing to add
   const shiftId = shifts.shiftFor(machine.company_id, deviceTime);
 
-  const partsCount = int(payload.parts_count);
+  const partsCount = partsCountOf(payload.parts_count);
 
   // The baseline survives Redis loss; a restart recovers it from journal or stored telemetry.
   let prevPartsCount  = prev?.parts_count ?? null;
@@ -260,7 +260,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
     ...(alarm ? { a: alarm } : {}),
     ...(meterDue ? { m: { machineId: machine.id, companyId: machine.company_id, at: deviceTime, reading } } : {}) });
   states.set(machine.id, livePayload);
-  remember(machine.id, payload);
+  remember(machine.id, hash);
   count('accepted');
   if (gap) count('unallocated_parts', producedDelta);
   recordMessage(`${machine.company_id}-${machine.id}-${machine.machine_serial_no}`, payload);
