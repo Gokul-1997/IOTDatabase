@@ -2,9 +2,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import pkg from 'pg';
+import { databaseTls } from './src/lib/database-tls.js';
 const { Pool } = pkg;
 
 export const pool = new Pool({
+  ssl: databaseTls(),
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT),
   database: process.env.DB_NAME,

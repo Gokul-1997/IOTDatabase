@@ -1,5 +1,6 @@
 import { createClient } from 'redis';
 import dotenv from 'dotenv';
+import { redisTls } from './src/lib/database-tls.js';
 
 dotenv.config();
 
@@ -7,6 +8,7 @@ export const redis = createClient({
   disableOfflineQueue: true,
   commandsQueueMaxLength: 128,
   socket: {
+    ...redisTls(),
     host: process.env.REDIS_HOST,
     port: Number(process.env.REDIS_PORT),
     // exponential backoff, capped at 5s — never give up
