@@ -72,7 +72,7 @@ export function hourlySlices({ companyId, machineId, prevStatus, prevMode, from,
       idle:       running ? 0 : sec,
       manual:     manual ? sec : 0,
       produced:   last ? (produced || 0) : 0,
-      energy:     energy != null ? Number((energy * sec / total).toFixed(4)) : 0
+      energy:     energy != null ? energy * sec / total : 0
     });
   }
   return out;
@@ -89,7 +89,7 @@ export function sumSlices(slices) {
     const t = m.get(k);
     if (!t) { m.set(k, { ...s }); continue; }
     t.run += s.run; t.idle += s.idle; t.manual += s.manual; t.produced += s.produced;
-    t.energy = Number((t.energy + s.energy).toFixed(4));
+    t.energy += s.energy;
   }
   return [...m.values()];
 }

@@ -59,9 +59,12 @@ describe('powerSignals — the PowerData block', () => {
     expect(powerSignals(noEnergy).energy).toBe(110.80000305175781);
   });
 
-  test('line-to-neutral only when no line-to-line voltage is sent', () => {
+  test('line-to-neutral is not mislabeled as line-to-line when LL voltage is missing', () => {
     const { Average_Voltage_LL, ...lnOnly } = PowerData;
-    expect(powerSignals({ PowerData: lnOnly }).voltage).toBe(240.58999633789062);
+    expect(powerSignals({ PowerData: lnOnly }).voltage).toBeNull();
+    expect(meterReading({ PowerData: lnOnly }).v_ln_avg).toBe(240.58999633789062);
+    expect(meterReading({ PowerData: lnOnly }).v_ll_avg).toBeNull();
+    expect(powerSignals({ voltage: 415, PowerData: lnOnly }).voltage).toBe(415);
   });
 
   test('keys match whatever their case or spelling of the block name', () => {
@@ -93,6 +96,25 @@ describe('powerSignals — the flat keys of the payload contract', () => {
 });
 
 describe('powerSignals — nothing to read', () => {
+  test.each(['230oops', '1e3junk', true, [], {}, '1.2.3', '1e999'])('malformed electrical value %j stays unknown', value => {
+    expect(powerSignals({ energy: value, voltage: value, current: value, power: value }))
+      .toEqual({ energy: null, voltage: null, current: null, power: null });
+    expect(meterReading({ PowerData: { Average_Voltage_LL: value, Average_Current: value, Total_kW: value } })).toBeNull();
+  });
+
+  test('negative voltage, current and cumulative energy are unknown; signed power remains visible', () => {
+    expect(powerSignals({ energy: -10, voltage: -415, current: -4, power: -5 }))
+      .toEqual({ energy: null, voltage: null, current: null, power: -5 });
+    expect(meterReading({ PowerData: { Total_Active_Energy_kWh: -10, Average_Voltage_LL: -415,
+      Average_Current: -4, Total_kW: -5, Total_kVAr: -3, Average_PF: -0.8 } }))
+      .toMatchObject({ kwh_total: null, v_ll_avg: null, i_avg: null, kw_total: -5, kvar_total: -3, pf_avg: -0.8 });
+  });
+
+  test('complete numeric electrical strings retain exponents and decimal commas', () => {
+    expect(powerSignals({ voltage: '4.15e2', current: '1,5', power: '-7.3e-1', energy: '1.1e2 kWh' }))
+      .toEqual({ energy: 110, voltage: 415, current: 1.5, power: -0.73 });
+  });
+
   test.each([
     ['no meter at all', { machine_status: 'RUN' }],
     ['an empty block', { PowerData: {} }],
@@ -139,6 +161,40 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
     expect(r.frequency_hz).toBe(50.01);
     expect(r.aux_interrupts).toBe(7);
     expect(r.v1n).toBeNull();
+  });
+
+  test('finite values outside REAL storage bounds stay null and do not poison the reading', () => {
+    const r = meterReading({ PowerData: { Voltage_V1N: 1e100, Total_kW: -1e100,
+      Frequency: 1e-100, Average_Current: 2, Total_Active_Energy_kWh: 1e100 } });
+    expect(r.v1n).toBeNull();
+    expect(r.kw_total).toBeNull();
+    expect(r.frequency_hz).toBeNull();
+    expect(r.i_avg).toBe(2);
+    expect(r.kwh_total).toBe(1e100); // this column is DOUBLE PRECISION
+    expect(meterReading({ PowerData: { Total_kW: 1e100 } })).toBeNull();
+  });
+
+  test('REAL boundaries and true zero remain representable, including signed power', () => {
+    const max = (2 - 2 ** -23) * 2 ** 127, min = 2 ** -149;
+    const r = meterReading({ PowerData: { Total_kW: -max, Total_kVAr: min,
+      Average_Voltage_LL: max, Average_Current: 0 } });
+    expect(r.kw_total).toBe(-max);
+    expect(r.kvar_total).toBe(min);
+    expect(r.v_ll_avg).toBe(max);
+    expect(r.i_avg).toBe(0);
+  });
+
+  test('interruption counts fit INT32 after truncation without overflowing or wrapping', () => {
+    expect(meterReading({ PowerData: { Auxiliary_Interrupts: 2147483647 } }).aux_interrupts).toBe(2147483647);
+    expect(meterReading({ PowerData: { Auxiliary_Interrupts: '2147483647.9' } }).aux_interrupts).toBe(2147483647);
+    expect(meterReading({ PowerData: { Auxiliary_Interrupts: 2147483648, Total_kW: 2 } }).aux_interrupts).toBeNull();
+    expect(meterReading({ PowerData: { Auxiliary_Interrupts: 1e20 } })).toBeNull();
+    expect(meterReading({ PowerData: { Auxiliary_Interrupts: -1 } })).toBeNull();
+  });
+
+  test('telemetry DOUBLE fields retain finite values rather than inheriting REAL meter limits', () => {
+    expect(powerSignals({ energy: 1e100, voltage: 1e100, current: 1e100, power: -1e100 }))
+      .toEqual({ energy: 1e100, voltage: 1e100, current: 1e100, power: -1e100 });
   });
 
   test.each([

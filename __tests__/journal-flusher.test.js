@@ -382,6 +382,20 @@ test('unallocatable gap provenance commits once and never adds unverified hourly
   journal.append(record); db.loseCommitReply = true;
   await expect(flusher.pass()).rejects.toThrow('COMMIT response lost');
   await drainPasses(flusher);
-  expect(db.gaps).toHaveLength(1); expect(db.gaps[0][7]).toBe(8);
+  expect(db.gaps).toHaveLength(1); expect(db.gaps[0][7]).toBe(60); expect(db.gaps[0][8]).toBe(8);
+  expect(db.hourly.size).toBe(0); journal.close();
+});
+
+test('an energy-only observation gap persists zero added state seconds and its exact unallocated delta', async () => {
+  const { db, journal, flusher } = setup();
+  const record = reading(7, 100);
+  record.h = [];
+  record.gap = { company_id: 4, machine_id: 7, from: 1, to: 100,
+    known_state_seconds: 0, unallocated_parts: 0, unallocated_energy: 0.002,
+    reason: 'observations_missing' };
+  journal.append(record);
+  await drainPasses(flusher);
+  expect(db.gaps).toHaveLength(1);
+  expect(db.gaps[0].slice(7, 10)).toEqual([0, 0, 0.002]);
   expect(db.hourly.size).toBe(0); journal.close();
 });

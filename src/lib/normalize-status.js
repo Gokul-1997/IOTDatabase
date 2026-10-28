@@ -14,11 +14,14 @@ export function normalizeMachineState(status) {
 }
 
 export function parseEnergy(val) {
-  if (val == null) return null;
-  // A number is taken as it is: turned into text first, 3.6e-7 would lose
-  // its "e-" below and read as 3.67.
-  if (typeof val === 'number') return Number.isFinite(val) ? val : null;
-  const str = String(val).trim().replace(',', '.');
-  const n   = parseFloat(str.replace(/[^0-9.]/g, ''));
-  return Number.isNaN(n) ? null : n;
+  if (typeof val === 'number') return Number.isFinite(val) && val >= 0 ? val : null;
+  if (typeof val !== 'string') return null;
+  // Read the whole value, including its sign and exponent. Stripping text
+  // could turn "error123" or "-12 kWh" into a real positive meter reading.
+  // The two deployed payload forms (a number and a number with kWh) and
+  // decimal-comma collectors are accepted without guessing other units.
+  const str = val.trim();
+  if (!/^[+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:e[+-]?\d+)?(?:\s*kwh)?$/i.test(str)) return null;
+  const n = Number(str.replace(/\s*kwh$/i, '').replace(',', '.'));
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }

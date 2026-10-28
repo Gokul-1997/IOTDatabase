@@ -18,7 +18,8 @@
  *   energy   the meter's running total in kWh: `Energy`, or the block's
  *            Total_Active_Energy_kWh when `Energy` is missing
  *   voltage  the line-to-line average (~415 V), the figure a 3-phase supply
- *            is quoted in; line-to-neutral only when that is all there is
+ *            is quoted in; the separate phase-to-neutral reading is never
+ *            substituted for it
  *   current  the average of the three phases
  *   power    total kW, signed as the meter reports it. On VMC - 1 - F it is
  *            negative and Export energy outruns Import, which means the
@@ -33,10 +34,27 @@
  * still work, for collectors that send those instead.
  */
 
-import { canonicalPayload, num } from './condition-signals.js';
+import { canonicalPayload } from './condition-signals.js';
 import { parseEnergy } from './normalize-status.js';
 
 const isBlock = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+// Migration029 uses REAL for instantaneous readings, DOUBLE PRECISION for
+// cumulative registers/run_hours, and INT for interruption counts. A finite
+// JavaScript number can still overflow REAL/INT and poison a journal batch.
+const FLOAT4_MAX = (2 - 2 ** -23) * 2 ** 127;
+const FLOAT4_MIN = 2 ** -149;
+const INT32_MAX = 2 ** 31 - 1;
+const DOUBLE_COLUMNS = /^(?:kwh_|kvarh_|kvah_|run_hours$)/;
+
+// Electrical values must be complete finite numbers. A diagnostic string
+// such as "230 unavailable" must not become a convincing 230 V reading.
+function meterNumber(value, unsigned = false) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  const text = typeof value === 'string' ? value.trim() : null;
+  if (text !== null && !/^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:e[+-]?\d+)?$/i.test(text)) return null;
+  const number = text === null ? value : Number(text.replace(',', '.'));
+  return Number.isFinite(number) && (!unsigned || number >= 0) ? number : null;
+}
 
 /** The meter block with its keys lower-cased, or {} when there is none. */
 function meterBlock(top) {
@@ -50,10 +68,10 @@ export function powerSignals(payload) {
   const m   = meterBlock(top);
 
   return {
-    energy:  parseEnergy(top.energy) ?? num(m.total_active_energy_kwh),
-    voltage: num(m.average_voltage_ll) ?? num(m.average_voltage_ln) ?? num(top.voltage ?? top.volts),
-    current: num(m.average_current) ?? num(top.current ?? top.amps ?? top.amperes),
-    power:   num(m.total_kw) ?? num(top.power ?? top.kw)
+    energy:  parseEnergy(top.energy) ?? parseEnergy(m.total_active_energy_kwh),
+    voltage: meterNumber(m.average_voltage_ll, true) ?? meterNumber(top.voltage ?? top.volts, true),
+    current: meterNumber(m.average_current, true) ?? meterNumber(top.current ?? top.amps ?? top.amperes, true),
+    power:   meterNumber(m.total_kw) ?? meterNumber(top.power ?? top.kw)
   };
 }
 
@@ -105,9 +123,19 @@ export function meterReading(payload) {
   const out = {};
   let any = false;
   for (const [column, key] of METER_FIELDS) {
-    const v = num(m[key]);
-    out[column] = column === 'aux_interrupts' && v !== null ? Math.trunc(v) : v;
-    if (v !== null) any = true;
+    const unsigned = /^(?:v\d|v_ln|v_ll|i\d|i_avg|kva(?:\d|_total|_demand)|kwh|kvarh|kvah|run_hours|aux_interrupts)/.test(column);
+    let value = meterNumber(m[key], unsigned);
+    if (value !== null) {
+      if (column === 'aux_interrupts') {
+        value = Math.trunc(value);
+        if (value > INT32_MAX) value = null;
+      } else if (!DOUBLE_COLUMNS.test(column)) {
+        const magnitude = Math.abs(value);
+        if (magnitude > FLOAT4_MAX || (magnitude !== 0 && magnitude < FLOAT4_MIN)) value = null;
+      }
+    }
+    out[column] = value;
+    if (value !== null) any = true;
   }
   return any ? out : null;
 }

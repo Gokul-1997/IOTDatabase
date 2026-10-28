@@ -149,10 +149,10 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
         await atStage('ingest_gaps', () => client.query(`INSERT INTO ingest_gaps
           (collector_id,journal_seq,company_id,machine_id,last_observed_at,resumed_at,gap_seconds,
            known_state_seconds,unallocated_parts,unallocated_energy_kwh,reason,received_at)
-          VALUES($1,$2,$3,$4,to_timestamp($5),to_timestamp($6),$7,60,$8,$9,$10,$11)
+          VALUES($1,$2,$3,$4,to_timestamp($5),to_timestamp($6),$7,$8,$9,$10,$11,$12)
           ON CONFLICT(collector_id,journal_seq) DO NOTHING`,
         [collectorId, record.s, gap.company_id, gap.machine_id, gap.from, gap.to, gap.to - gap.from,
-          gap.unallocated_parts, gap.unallocated_energy, gap.reason, record.r.received_at]));
+          gap.known_state_seconds ?? 60, gap.unallocated_parts, gap.unallocated_energy, gap.reason, record.r.received_at]));
       }
       if (record.a) await atStage('machine_alarms', () => writeAlarmTransition(client, record.a));
       if (record.m) {

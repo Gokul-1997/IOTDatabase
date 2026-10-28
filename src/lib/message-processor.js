@@ -149,6 +149,13 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   /* The time since the machine's previous accepted reading, credited to the state it
      was in then — written with the telemetry row, in the same transaction. */
   const longGap = gapSeconds > 60;
+  const meterFrom = energyLast && Number.isFinite(Number(energyLast.at)) && Number(energyLast.at) > 0
+    ? Number(energyLast.at) : deviceTime;
+  const meterGapSeconds = Math.max(0, deviceTime - meterFrom);
+  // A cumulative change is real, but a long missing-meter interval cannot
+  // establish which hour/shift used it, even when other telemetry continued.
+  const longMeterGap = energyDelta > 0 && meterGapSeconds > 60;
+  const unallocatedEnergy = longGap || longMeterGap;
   const slices = (prev && prev.received_at)
     ? hourlySlices({
         companyId:  machine.company_id,
@@ -158,7 +165,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
         from:       Number(prev.received_at),
         to:         longGap ? Number(prev.received_at) + 60 : deviceTime,
         produced:   longGap ? 0 : producedDelta,
-        energy:     longGap ? null : energyDelta,
+        energy:     !unallocatedEnergy && meterFrom === Number(prev.received_at) ? energyDelta : null,
         shifts:     shifts.shiftsOf(machine.company_id)
       })
     : [];
@@ -170,10 +177,27 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
       hour_start: istHourStart(deviceTime), run: 0, idle: 0, manual: 0,
       produced: producedDelta, energy: 0 });
   }
-  const gap = longGap ? {
+  // A zero/missing meter value keeps its earlier real baseline. Split its
+  // later delta over that actual meter interval, not just the last telemetry
+  // interval, without crediting any runtime or production a second time.
+  if (energyDelta > 0 && !unallocatedEnergy &&
+      (meterFrom !== Number(prev?.received_at) || meterGapSeconds === 0)) {
+    if (meterGapSeconds === 0) {
+      if (shiftId) slices.push({ company_id: machine.company_id, machine_id: machine.id, shift_id: shiftId,
+        hour_start: istHourStart(deviceTime), run: 0, idle: 0, manual: 0, produced: 0, energy: energyDelta });
+    } else {
+      slices.push(...hourlySlices({ companyId: machine.company_id, machineId: machine.id,
+        from: meterFrom, to: deviceTime, energy: energyDelta,
+        shifts: shifts.shiftsOf(machine.company_id) })
+        .map(slice => ({ ...slice, run: 0, idle: 0, manual: 0, produced: 0 })));
+    }
+  }
+  const gap = longGap || longMeterGap ? {
     company_id: machine.company_id, machine_id: machine.id,
-    from: Number(prev.received_at), to: deviceTime,
-    unallocated_parts: producedDelta, unallocated_energy: energyDelta,
+    from: longGap ? Math.min(Number(prev.received_at), energyDelta > 0 ? meterFrom : Number(prev.received_at)) : meterFrom,
+    to: deviceTime,
+    known_state_seconds: longGap ? 60 : 0,
+    unallocated_parts: longGap ? producedDelta : 0, unallocated_energy: energyDelta,
     reason: 'observations_missing'
   } : null;
   // Counter deltas across an offline gap cannot be assigned to a particular
@@ -199,6 +223,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
       received_at:    deviceTime,
       fingerprint:    hash,
       unallocated_parts: (prev?.unallocated_parts || 0) + (gap?.unallocated_parts || 0),
+      unallocated_energy: (prev?.unallocated_energy || 0) + (gap?.unallocated_energy || 0),
       last_gap: gap || prev?.last_gap || null
     };
 
