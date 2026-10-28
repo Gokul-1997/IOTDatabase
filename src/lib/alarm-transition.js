@@ -1,8 +1,10 @@
 /** Pure, immutable alarm operations carried with the accepted journal record. */
 import { alarmFields, alarmKey, alarmSeverityClass } from './alarm-text.js';
+import { isFanucBatteryCode } from './fanuc-battery.js';
 export { alarmKey } from './alarm-text.js';
 
-export function alarmTransition({ prev, alarms = [], isAlarm, companyId, machineId, shiftId, deviceTime, receivedAt }) {
+export function alarmTransition({ prev, alarms = [], isAlarm, companyId, machineId, shiftId, deviceTime, receivedAt,
+  preserveUnknownBattery = false, batteryClears = [] }) {
   const known = Array.isArray(prev?.alarm_codes);
   const before = new Set(known ? prev.alarm_codes : []);
   const active = isAlarm ? alarms : [];
@@ -12,11 +14,14 @@ export function alarmTransition({ prev, alarms = [], isAlarm, companyId, machine
   // those once against the database instead of assuming a new critical alarm.
   const updates = active.filter(a => before.has(alarmKey(a)) &&
     prev?.alarm_severities?.[alarmKey(a)] !== alarmFields(a).severity);
-  const closes = known ? [...before].filter(key => !after.has(key)) : [];
+  const clearBattery = new Set(batteryClears.filter(isFanucBatteryCode));
+  const closes = known ? [...before].filter(key => !after.has(key) &&
+    (!preserveUnknownBattery || !isFanucBatteryCode(key) || clearBattery.has(key))) : [];
   const reconcile = !known;
   if (!opens.length && !updates.length && !closes.length && !reconcile && prev?.alarm === isAlarm) return null;
   return { companyId, machineId, shiftId, at: deviceTime, opens, closes,
     ...(updates.length ? { updates } : {}), ...(receivedAt ? { receivedAt } : {}),
+    ...(reconcile && preserveUnknownBattery ? { preserveUnknownBattery: true, batteryClears: [...clearBattery] } : {}),
     ...(reconcile ? { keep: [...after] } : {}) };
 }
 
@@ -75,8 +80,13 @@ export async function writeAlarmTransition(client, transition) {
         AND COALESCE(severity_observed_at, started_at) <= to_timestamp($3)
         AND (severity_observed_at IS DISTINCT FROM to_timestamp($3)
           OR COALESCE(severity_received_at, severity_observed_at) <= $5::timestamptz)
-        AND ${keep !== undefined ? 'NOT (COALESCE(alarm_code, alarm_type) = ANY($4::text[]))' : 'COALESCE(alarm_code, alarm_type) = ANY($4::text[])'}`,
-    [companyId, machineId, at, keep !== undefined ? keep : closes, receivedAt]);
+        AND ${keep !== undefined ? 'NOT (COALESCE(alarm_code, alarm_type) = ANY($4::text[]))' : 'COALESCE(alarm_code, alarm_type) = ANY($4::text[])'}
+        ${keep !== undefined && transition.preserveUnknownBattery ? `AND (
+          NOT (COALESCE(alarm_code, alarm_type) = 'FANUC_CNC_BATTERY'
+            OR COALESCE(alarm_code, alarm_type) ~ '^FANUC_ACC_[A-Z][A-Z0-9_]{0,7}_(ABP|INP|EXP|LOW)$')
+          OR COALESCE(alarm_code, alarm_type) = ANY($6::text[]))` : ''}`,
+    [companyId, machineId, at, keep !== undefined ? keep : closes, receivedAt,
+      ...(keep !== undefined && transition.preserveUnknownBattery ? [transition.batteryClears || []] : [])]);
   }
   // A cold collector cannot prove that an existing alarm stayed active
   // while its accepted baseline was unavailable. Keep reporting history,

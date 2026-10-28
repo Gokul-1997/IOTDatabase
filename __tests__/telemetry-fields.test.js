@@ -109,6 +109,8 @@ describe('condition signals and the alarm flag', () => {
     cnc_battery_voltage: null,
     fan_status: { CNC_FAN1: { on: true, fault: false, rpm: 10206 } },
     apc_battery_status: { X: false, Y: true, Z: false },
+    acc_battery_status: { X: { low: true, ABP: true, INP: false, EXP: false, raw: 8 } },
+    cnc_battery_warning: { warning: true, raw_alarm_value: 1 },
     extra_axes: null
   };
 
@@ -148,6 +150,8 @@ describe('condition signals and the alarm flag', () => {
 
     expect(JSON.parse(row.fan_status)).toEqual({ CNC_FAN1: { on: true, fault: false, rpm: 10206 } });
     expect(JSON.parse(row.apc_battery_status)).toEqual({ X: false, Y: true, Z: false });
+    expect(JSON.parse(row.acc_battery_status)).toEqual(condition.acc_battery_status);
+    expect(JSON.parse(row.cnc_battery_warning)).toEqual(condition.cnc_battery_warning);
     expect(row.extra_axes).toBeNull();
   });
 

@@ -47,7 +47,9 @@ export async function startServer(config) {
     if (missing.length || missingT.length || missingA.length) {
       log('error', missingA.length || missingT.includes('alarm_notification_events')
         ? 'the alarm priority event schema is missing — apply Backend migration 048_alarm_notification_policies.sql (Backend: npm run migrate), then restart the collector'
-        : 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',
+        : missing.includes('acc_battery_status') || missing.includes('cnc_battery_warning')
+          ? 'FANUC battery diagnostic columns are missing — apply Backend migration 062 (Backend: npm run migrate), then restart the collector'
+          : 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',
       { missing_columns: missing, missing_tables: missingT, missing_alarm_columns: missingA });
       return process.exit(1);
     }

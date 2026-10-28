@@ -119,7 +119,10 @@ const COLUMNS = [
   ['fan_status',             r => r.fan_status ? JSON.stringify(r.fan_status) : null],
   ['extra_axes',             r => r.extra_axes ? JSON.stringify(r.extra_axes) : null],
   // per-axis battery alarm flags (migration 032)
-  ['apc_battery_status',     r => r.apc_battery_status ? JSON.stringify(r.apc_battery_status) : null]
+  ['apc_battery_status',     r => r.apc_battery_status ? JSON.stringify(r.apc_battery_status) : null],
+  // FANUC detector diagnostics and the separate controller battery warning (migration 062)
+  ['acc_battery_status',     r => r.acc_battery_status ? JSON.stringify(r.acc_battery_status) : null],
+  ['cnc_battery_warning',    r => r.cnc_battery_warning ? JSON.stringify(r.cnc_battery_warning) : null]
 ];
 
 export const TELEMETRY_COLUMNS = COLUMNS.map(([name]) => name);

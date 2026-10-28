@@ -6,6 +6,7 @@ import { conditionSignals, isAlarming, isDisconnected, controllerIdentity, focas
 import { alarmKey, alarmTransition } from './alarm-transition.js';
 import { alarmFields } from './alarm-text.js';
 import { fingerprint, validDeviceTime } from './admission.js';
+import { fanucBatterySignals, fanucBatteryAlarms } from './fanuc-battery.js';
 
 const RUN_STATES = new Set(['RUN', 'RUNNING', 'CUTTING']);
 const num = v => {
@@ -143,7 +144,9 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   /* Every alarm active now — a machine can carry several — computed once and
      kept in the live state, so the next message can tell which codes are new
      and which cleared. Transitions travel in the durable journal and commit alongside telemetry. */
-  const alarmsNow  = normalized.alarm ? activeAlarms(payload, { alarming: true }) : [];
+  const battery = fanucBatterySignals(payload, machine.controller_type);
+  const batteryAlarms = fanucBatteryAlarms(battery, prev?.battery_alarm_codes || prev?.alarm_codes || []);
+  const alarmsNow = [...(normalized.alarm ? activeAlarms(payload, { alarming: true }) : []), ...batteryAlarms.alarms];
   const alarmCodes = alarmsNow.map(alarmKey);
 
   /* The time since the machine's previous accepted reading, credited to the state it
@@ -212,6 +215,10 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
       alarm:          normalized.alarm,
       alarm_codes:    alarmCodes,
       alarm_severities: Object.fromEntries(alarmsNow.map(alarm => [alarmKey(alarm), alarmFields(alarm).severity])),
+      battery_alarm_codes: batteryAlarms.codes,
+      // Only this packet's diagnostics are fresh. Retained unresolved alarm
+      // keys above must never turn old battery readings into current readings.
+      ...battery,
       mode,
       spindle_load:   payload.spindle_load ?? 0,
       feed_rate:      payload.feed_rate    ?? 0,
@@ -272,10 +279,19 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
     /* Machine condition — Screen 2's gauges. Each axis is independently
        nullable, because on some controllers only one servo reports a
        temperature and a missing sensor must not read as 0 °C. */
-    ...conditionSignals(payload)
+    ...conditionSignals(payload),
+    ...battery
   };
+  if (battery.acc_battery_status) {
+    const flat = Object.fromEntries(Object.entries(battery.acc_battery_status)
+      .filter(([, state]) => state.low !== null).map(([axis, state]) => [axis, state.low]));
+    if (Object.keys(flat).length) row.apc_battery_status = flat;
+  }
 
-  const alarm = alarmTransition({ prev, alarms: alarmsNow, isAlarm: normalized.alarm,
+  const alarm = alarmTransition({ prev: prev ? { ...prev,
+    alarm: prev.alarm || (prev.battery_alarm_codes || []).length > 0 } : prev,
+    alarms: alarmsNow, isAlarm: alarmsNow.length > 0,
+    preserveUnknownBattery: true, batteryClears: batteryAlarms.cleared,
     companyId: machine.company_id, machineId: machine.id, shiftId, deviceTime, receivedAt });
   const reading = meterReading(payload);
   const meterDue = reading && (!prev?.meter_recorded_at || deviceTime - prev.meter_recorded_at >= 15);
