@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { canonicalPayload } from './condition-signals.js';
+import { observationTime } from './energy-packet.js';
 
 export const MAX_PAYLOAD_BYTES = 64 * 1024;
 export const MAX_FUTURE_MS = 60_000;
@@ -26,7 +27,7 @@ export function parseTelemetry(packet, receivedAtMs, maxBytes = MAX_PAYLOAD_BYTE
   let payload;
   try { payload = canonicalPayload(JSON.parse(packet.payload.toString())); } catch { return null; }
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
-      !validDeviceTime(Number(payload.time), receivedAtMs)) return null;
+      !validDeviceTime(observationTime(payload, receivedAtMs), receivedAtMs)) return null;
   // Deeply nested attacker-controlled JSON must not overflow fingerprint recursion.
   const pending = [[payload, 0]];
   while (pending.length) {

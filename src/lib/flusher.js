@@ -27,6 +27,7 @@ import { sumSlices } from './hourly.js';
 import { writeAlarmTransition } from './alarm-transition.js';
 import { alarmFields } from './alarm-text.js';
 import { METER_FIELDS } from './power-signals.js';
+import { METER_INSERT_SQL } from './meter-writer.js';
 
 export function isDataError(err) {
   return !!err && typeof err.code === 'string' && (err.code.startsWith('22') || err.code.startsWith('23'));
@@ -152,16 +153,15 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
           VALUES($1,$2,$3,$4,to_timestamp($5),to_timestamp($6),$7,$8,$9,$10,$11,$12)
           ON CONFLICT(collector_id,journal_seq) DO NOTHING`,
         [collectorId, record.s, gap.company_id, gap.machine_id, gap.from, gap.to, gap.to - gap.from,
-          gap.known_state_seconds ?? 60, gap.unallocated_parts, gap.unallocated_energy, gap.reason, record.r.received_at]));
+          gap.known_state_seconds ?? 60, gap.unallocated_parts, gap.unallocated_energy, gap.reason,
+          gap.received_at || record.r?.received_at]));
       }
       if (record.a) await atStage('machine_alarms', () => writeAlarmTransition(client, record.a));
       if (record.m) {
-        const { machineId, companyId, at, reading } = record.m;
-        const columns = ['machine_id', 'company_id', 'read_at', ...METER_FIELDS.map(([c]) => c)];
-        const cells = columns.map((c, i) => c === 'read_at' ? `to_timestamp($${i + 1})` : `$${i + 1}`);
-        await atStage('energy_meter_readings', () => client.query(`INSERT INTO energy_meter_readings (${columns.join(',')}) VALUES (${cells.join(',')})
-          ON CONFLICT (machine_id, read_at) DO NOTHING`,
-        [machineId, companyId, at, ...METER_FIELDS.map(([c]) => reading[c] ?? null)]));
+        const { machineId, companyId, at, reading, standalone } = record.m;
+        await atStage('energy_meter_readings', () => client.query(METER_INSERT_SQL,
+        [machineId, companyId, at, ...METER_FIELDS.map(([c]) => reading[c] ?? null),
+          standalone ? METER_FIELDS.filter(([c]) => reading[c] != null).map(([c]) => c) : [], standalone === true]));
       }
     }
     return written;

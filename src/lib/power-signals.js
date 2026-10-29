@@ -1,7 +1,8 @@
 /*
  * Electrical readings from a machine's energy meter.
  *
- * The embedded team's collector sends the meter as one block, first seen
+ * The embedded team's collector sends either a full block or changed fields,
+ * first seen
  * from VMC - 1 - F (192.168.200.2) on 3 Oct 2026:
  *
  *   "PowerData": { "Average_Voltage_LN": 240.59, "Average_Voltage_LL": 416.73,
@@ -15,8 +16,9 @@
  * the Energy screen's totals use and the agreement asks for (kWh, volts,
  * amps), plus kW for the overload check:
  *
- *   energy   the meter's running total in kWh: `Energy`, or the block's
- *            Total_Active_Energy_kWh when `Energy` is missing
+ *   energy   the meter's running total in kWh: `Energy`, `EnergyFormatted`,
+ *            `EnergyData.Total_kWh`, or PowerData.Total_Active_Energy_kWh.
+ *            The first valid value wins; zero is a real reading.
  *   voltage  the line-to-line average (~415 V), the figure a 3-phase supply
  *            is quoted in; the separate phase-to-neutral reading is never
  *            substituted for it
@@ -58,20 +60,46 @@ function meterNumber(value, unsigned = false) {
 
 /** The meter block with its keys lower-cased, or {} when there is none. */
 function meterBlock(top) {
-  const block = canonicalPayload(top.powerdata ?? top.power_data);
-  return isBlock(block) ? block : {};
+  return namedBlock(top, ['powerdata', 'power_data']);
+}
+
+function namedBlock(top, keys) {
+  for (const key of keys) {
+    const block = canonicalPayload(top[key]);
+    if (isBlock(block)) return block;
+  }
+  return {};
+}
+
+function firstReading(values, read) {
+  for (const value of values) {
+    const parsed = read(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function readingCandidates(top, m) {
+  const energy = namedBlock(top, ['energydata', 'energy_data']);
+  return {
+    kwh_total: [top.energy, top.energyformatted, top.energy_formatted, energy.total_kwh, m.total_active_energy_kwh],
+    v_ll_avg: [m.average_voltage_ll, top.voltage, top.volts],
+    i_avg: [m.average_current, top.current, top.amps, top.amperes],
+    kw_total: [m.total_kw, top.power, top.kw]
+  };
 }
 
 export function powerSignals(payload) {
   const p   = canonicalPayload(payload);
   const top = isBlock(p) ? p : {};
   const m   = meterBlock(top);
+  const candidates = readingCandidates(top, m);
 
   return {
-    energy:  parseEnergy(top.energy) ?? parseEnergy(m.total_active_energy_kwh),
-    voltage: meterNumber(m.average_voltage_ll, true) ?? meterNumber(top.voltage ?? top.volts, true),
-    current: meterNumber(m.average_current, true) ?? meterNumber(top.current ?? top.amps ?? top.amperes, true),
-    power:   meterNumber(m.total_kw) ?? meterNumber(top.power ?? top.kw)
+    energy:  firstReading(candidates.kwh_total, parseEnergy),
+    voltage: firstReading(candidates.v_ll_avg, v => meterNumber(v, true)),
+    current: firstReading(candidates.i_avg, v => meterNumber(v, true)),
+    power:   firstReading(candidates.kw_total, meterNumber)
   };
 }
 
@@ -112,20 +140,23 @@ export const METER_FIELDS = [
 ];
 
 /**
- * Every value in the meter block, by column — or null when the payload has
- * no block or nothing in it can be read, so a machine without a meter costs
- * nothing.
+ * The fields received in this message, by column. A single changed field is
+ * enough to create a reading; omitted fields stay null and are never copied
+ * from an older message. No row is created when nothing can be read.
  */
 export function meterReading(payload) {
   const p = canonicalPayload(payload);
-  const m = meterBlock(isBlock(p) ? p : {});
+  const top = isBlock(p) ? p : {};
+  const m = meterBlock(top);
+  const candidates = readingCandidates(top, m);
 
   const out = {};
   let any = false;
   for (const [column, key] of METER_FIELDS) {
     const unsigned = /^(?:v\d|v_ln|v_ll|i\d|i_avg|kva(?:\d|_total|_demand)|kwh|kvarh|kvah|run_hours|aux_interrupts)/.test(column);
-    let value = meterNumber(m[key], unsigned);
-    if (value !== null) {
+    const value = firstReading(candidates[column] ?? [m[key]], candidate => {
+      let value = column === 'kwh_total' ? parseEnergy(candidate) : meterNumber(candidate, unsigned);
+      if (value === null) return null;
       if (column === 'aux_interrupts') {
         value = Math.trunc(value);
         if (value > INT32_MAX) value = null;
@@ -133,7 +164,8 @@ export function meterReading(payload) {
         const magnitude = Math.abs(value);
         if (magnitude > FLOAT4_MAX || (magnitude !== 0 && magnitude < FLOAT4_MIN)) value = null;
       }
-    }
+      return value;
+    });
     out[column] = value;
     if (value !== null) any = true;
   }

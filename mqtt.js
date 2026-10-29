@@ -54,20 +54,21 @@ async function hydrate(machine) {
   // Redis is a presentation cache, so an outage cannot erase production deltas.
   const { rows } = await pool.query(`SELECT t.parts_count, t.machine_status, t.mode, t.alarm,
     COALESCE(t.device_time, EXTRACT(EPOCH FROM t.received_at)::bigint) AS received_at,
-    e.energy AS energy_meter, e.device_time AS energy_meter_at, b.battery_alarm_codes
+    e.energy AS energy_meter, e.device_time AS energy_meter_at,
+    CASE WHEN e.standalone THEN e.device_time END AS energy_standalone_at, b.battery_alarm_codes
     FROM (SELECT parts_count, machine_status, mode, alarm, device_time, received_at FROM telemetry_raw
       WHERE company_id = $1 AND machine_id = $2 AND received_at > now() - interval '7 days'
       ORDER BY received_at DESC LIMIT 1) t
     RIGHT JOIN (SELECT 1) seed ON true
-    LEFT JOIN LATERAL (SELECT energy, device_time FROM telemetry_raw
-      WHERE company_id = $1 AND machine_id = $2 AND received_at > now() - interval '7 days' AND energy > 0
-      ORDER BY received_at DESC LIMIT 1) e ON true
+    LEFT JOIN LATERAL (SELECT energy, EXTRACT(EPOCH FROM observed_at) AS device_time, standalone FROM energy_observations
+      WHERE company_id = $1 AND machine_id = $2 AND received_at > now() - interval '7 days' AND observed_at <= now() AND energy > 0
+      ORDER BY observed_at DESC LIMIT 1) e ON true
     LEFT JOIN LATERAL (SELECT array_agg(alarm_code) AS battery_alarm_codes FROM (
       SELECT alarm_code FROM machine_alarms
       WHERE company_id = $1 AND machine_id = $2 AND ended_at IS NULL
         AND (alarm_code = 'FANUC_CNC_BATTERY' OR alarm_code ~ '^FANUC_ACC_[A-Z][A-Z0-9_]{0,7}_(ABP|INP|EXP|LOW)$')
       ORDER BY started_at DESC LIMIT 65) active_battery) b ON true`, [machine.company_id, machine.id]);
-  return rows[0] && (rows[0].received_at != null || rows[0].battery_alarm_codes?.length)
+  return rows[0] && (rows[0].received_at != null || rows[0].energy_meter != null || rows[0].battery_alarm_codes?.length)
     ? { ...rows[0], received_at: rows[0].received_at == null ? null : Number(rows[0].received_at),
     energy_meter_at: rows[0].energy_meter_at == null ? null : Number(rows[0].energy_meter_at) } : null;
 }

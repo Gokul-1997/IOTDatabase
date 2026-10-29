@@ -54,3 +54,13 @@ export async function missingTables(pool, tables) {
   const have = new Set(rows.map(r => r.table_name));
   return tables.filter(t => !have.has(t));
 }
+
+/** Sparse merges require the marker and the column-level UPDATE grant. */
+export async function missingMeterSchema(pool) {
+  const { rows } = await pool.query(`SELECT attname AS column_name,
+    has_column_privilege(current_user,attrelid,attname,'UPDATE') AS can_update
+    FROM pg_attribute WHERE attrelid=to_regclass('energy_meter_readings')
+      AND attnum>0 AND NOT attisdropped AND attname IN ('standalone','standalone_fields')`);
+  return ['standalone','standalone_fields'].every(column => rows.some(row => row.column_name === column && row.can_update))
+    ? [] : ['energy_meter_readings.standalone/UPDATE'];
+}

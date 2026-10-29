@@ -1,6 +1,7 @@
 import { hourlySlices, istHourStart } from './hourly.js';
 import { partsCounterStep, partsCountOf } from './parts-delta.js';
 import { energyStep } from './energy-step.js';
+import { isEnergyPacket, observationTime } from './energy-packet.js';
 import { powerSignals, meterReading } from './power-signals.js';
 import { conditionSignals, isAlarming, isDisconnected, controllerIdentity, focasResult, activeAlarms } from './condition-signals.js';
 import { alarmKey, alarmTransition } from './alarm-transition.js';
@@ -70,14 +71,70 @@ export function createMessageProcessor({ journal, shifts, lookupMachine, hydrate
     finally { clearTimeout(timer); }
   }
 
+// Persist a standalone meter observation without touching the CNC clock,
+// status, counters, battery/alarm transitions or Redis machine liveness.
+async function handleEnergy(machine, payload, deviceTime, receivedAt, hash) {
+  const prev = await baseline(machine);
+  const lastAt = Math.max(Number(prev?.energy_observed_at) || 0, Number(prev?.energy_meter_at) || 0);
+  if (deviceTime < lastAt) {
+    await keepLate(machine, payload, deviceTime, receivedAt, 'out_of_order');
+    remember(machine.id, hash); return;
+  }
+  if (deviceTime === Number(prev?.energy_observed_at) && prev?.energy_fingerprint === hash) {
+    count('duplicate'); return;
+  }
+  const reading = meterReading(payload);
+  const energyLast = prev?.energy_meter != null
+    ? { meter: prev.energy_meter, at: prev.energy_meter_at } : null;
+  const { delta, last } = energyStep(energyLast, reading.kwh_total, deviceTime);
+  const from = energyLast && Number.isFinite(Number(energyLast.at)) ? Number(energyLast.at) : deviceTime;
+  const span = Math.max(0, deviceTime - from);
+  // Long change-only intervals prove a total change, not which shift used it.
+  // Retain that provenance instead of inventing a per-hour distribution.
+  const gap = delta > 0 && span > 60 ? {
+    company_id: machine.company_id, machine_id: machine.id, from, to: deviceTime,
+    known_state_seconds: 0, unallocated_parts: 0, unallocated_energy: delta,
+    reason: 'energy_observations_missing', received_at: receivedAt
+  } : null;
+  let slices = [];
+  if (delta > 0 && !gap) {
+    if (span === 0) {
+      const shift = shifts.shiftFor(machine.company_id, deviceTime);
+      if (shift) slices.push({ company_id: machine.company_id, machine_id: machine.id,
+        shift_id: shift, hour_start: istHourStart(deviceTime),
+        run: 0, idle: 0, manual: 0, produced: 0, energy: delta });
+    } else {
+      slices = hourlySlices({ companyId: machine.company_id, machineId: machine.id,
+        from, to: deviceTime, energy: delta, shifts: shifts.shiftsOf(machine.company_id) })
+        .map(slice => ({ ...slice, run: 0, idle: 0, manual: 0, produced: 0 }));
+    }
+  }
+  const values = { ...(prev?.meter_values || {}) };
+  const observed = { ...(prev?.meter_observed_at || {}) };
+  for (const [key, value] of Object.entries(reading)) if (value !== null) {
+    values[key] = value; observed[key] = deviceTime;
+  }
+  const state = { ...prev, machine_id: machine.id, company_id: machine.company_id,
+    plant_id: machine.plant_id, energy_meter: last?.meter ?? null,
+    energy_meter_at: last?.at ?? null, energy_observed_at: deviceTime,
+    energy_fingerprint: hash, energy_standalone_at: reading.kwh_total !== null ? deviceTime : prev?.energy_standalone_at, meter_values: values, meter_observed_at: observed,
+    unallocated_energy: (prev?.unallocated_energy || 0) + (gap?.unallocated_energy || 0),
+    last_gap: gap || prev?.last_gap || null };
+  await admit({ m: { machineId: machine.id, companyId: machine.company_id,
+    at: deviceTime, reading, standalone: true }, h: slices, state, ...(gap ? { gap } : {}) });
+  states.set(machine.id, state); remember(machine.id, hash); count('accepted');
+  count('energy_accepted');
+  recordMessage(`${machine.company_id}-${machine.id}-${machine.machine_serial_no}`, payload);
+}
+
 async function handleMessage(apiKey, payload, receivedAtMs) {
   const machine = await lookupMachine(apiKey);
   if (!machine) { count('unknown_machine'); return; }   // negative-cached; not logged per message
 
-  const deviceTime = Number(payload.time);
+  const deviceTime = observationTime(payload, receivedAtMs);
   if (!validDeviceTime(deviceTime, receivedAtMs)) { count('invalid'); return; }
 
-  const hash = fingerprint(payload);
+  const hash = fingerprint(Object.hasOwn(payload, 'time') ? payload : { ...payload, time: deviceTime });
   if (seen(machine.id, hash)) { count('duplicate'); return; }
 
   /* The collector could not reach the controller, and says so. Its other
@@ -94,6 +151,10 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
     await keepLate(machine, payload, deviceTime, receivedAt, 'stale', ingressLatencyMs);
     remember(machine.id, hash);
     return;
+  }
+
+  if (isEnergyPacket(payload)) {
+    await handleEnergy(machine, payload, deviceTime, receivedAt, hash); return;
   }
 
   const normalized = normalizeMachineState(payload.machine_status, payload);
@@ -148,7 +209,9 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   const energyLast = prev?.energy_meter != null
     ? { meter: prev.energy_meter, at: prev.energy_meter_at }
     : null;
-  const { delta: energyDelta, last: energyNow } = energyStep(energyLast, energy, deviceTime);
+  const standaloneWins = deviceTime === Number(prev?.energy_standalone_at);
+  const orderedEnergy = (!energyLast || deviceTime >= Number(energyLast.at)) && !standaloneWins ? energy : null;
+  const { delta: energyDelta, last: energyNow } = energyStep(energyLast, orderedEnergy, deviceTime);
 
   /* Every alarm active now — a machine can carry several — computed once and
      kept in the live state, so the next message can tell which codes are new
@@ -240,6 +303,11 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
       energy_meter_at: energyNow?.at ?? null,
       received_at:    deviceTime,
       fingerprint:    hash,
+      energy_observed_at: Math.max(Number(prev?.energy_observed_at) || 0, meter.energy != null ? deviceTime : 0) || null,
+      energy_fingerprint: prev?.energy_fingerprint,
+      energy_standalone_at: prev?.energy_standalone_at,
+      meter_values: prev?.meter_values,
+      meter_observed_at: prev?.meter_observed_at,
       unallocated_parts: (prev?.unallocated_parts || 0) + (gap?.unallocated_parts || 0),
       unallocated_energy: (prev?.unallocated_energy || 0) + (gap?.unallocated_energy || 0),
       last_gap: gap || prev?.last_gap || null
@@ -305,7 +373,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
     preserveUnknownBattery: true, batteryClears: batteryAlarms.cleared,
     companyId: machine.company_id, machineId: machine.id, shiftId, deviceTime, receivedAt });
   const reading = meterReading(payload);
-  const meterDue = reading && (!prev?.meter_recorded_at || deviceTime - prev.meter_recorded_at >= 15);
+  const meterDue = reading !== null;
   livePayload.meter_recorded_at = meterDue ? deviceTime : (prev?.meter_recorded_at ?? null);
   await admit({ r: row, h: slices, state: livePayload,
     ...(gap ? { gap } : {}),

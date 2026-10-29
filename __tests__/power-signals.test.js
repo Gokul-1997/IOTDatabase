@@ -93,6 +93,43 @@ describe('powerSignals — the flat keys of the payload contract', () => {
   test('the block wins over flat keys when both are sent', () => {
     expect(powerSignals({ voltage: 1, PowerData: { Average_Voltage_LL: 416 } }).voltage).toBe(416);
   });
+
+  test.each([
+    [{ EnergyFormatted: 3104 }, 3104],
+    [{ EnergyFormatted: '3104 kWh' }, 3104],
+    [{ EnergyData: { Total_kWh: 3104 } }, 3104],
+    [{ ENERGYDATA: { TOTAL_KWH: '3.104e3' } }, 3104],
+    [{ energy_formatted: '0 kWh' }, 0],
+    [{ energy_data: { total_kwh: '3104,5' } }, 3104.5]
+  ])('accepts an energy-only alias without waiting for machine data: %j', (payload, value) => {
+    expect(powerSignals(payload)).toEqual({ energy: value, voltage: null, current: null, power: null });
+    expect(meterReading(payload)).toMatchObject({ kwh_total: value, v_ll_avg: null, i_avg: null, kw_total: null });
+  });
+
+  test('energy aliases use the first valid reading consistently in both storage formats', () => {
+    const payload = { Energy: 0, EnergyFormatted: 21, EnergyData: { Total_kWh: 22 },
+      PowerData: { Total_Active_Energy_kWh: 23 } };
+    expect(powerSignals(payload).energy).toBe(0);
+    expect(meterReading(payload).kwh_total).toBe(0);
+    delete payload.Energy;
+    expect(powerSignals(payload).energy).toBe(21);
+    expect(meterReading(payload).kwh_total).toBe(21);
+    payload.EnergyFormatted = 'unavailable';
+    expect(powerSignals(payload).energy).toBe(22);
+    expect(meterReading(payload).kwh_total).toBe(22);
+    payload.EnergyData.Total_kWh = -1;
+    expect(powerSignals(payload).energy).toBe(23);
+    expect(meterReading(payload).kwh_total).toBe(23);
+  });
+
+  test('an invalid primary alias does not hide a valid alternate reading', () => {
+    const payload = { voltage: 'unknown', volts: 415, current: -1, amps: null,
+      amperes: 2, power: 'unknown', kw: -0.9550080299377441, PowerData: 'unavailable',
+      power_data: { Frequency: 49.816001892089844 } };
+    expect(powerSignals(payload)).toEqual({ energy: null, voltage: 415, current: 2, power: -0.9550080299377441 });
+    expect(meterReading(payload)).toMatchObject({ v_ll_avg: 415, i_avg: 2,
+      kw_total: -0.9550080299377441, frequency_hz: 49.816001892089844 });
+  });
 });
 
 describe('powerSignals — nothing to read', () => {
@@ -163,6 +200,43 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
     expect(r.v1n).toBeNull();
   });
 
+  test.each(METER_FIELDS)('a single PowerData field %s is stored independently', (column, key) => {
+    const reading = meterReading({ PowerData: { [key]: 7 } });
+    expect(reading[column]).toBe(7);
+    expect(Object.entries(reading).filter(([, value]) => value !== null)).toEqual([[column, 7]]);
+  });
+
+  test.each([
+    [{ energy: '12.5 kWh' }, 'kwh_total', 12.5],
+    [{ voltage: 415 }, 'v_ll_avg', 415],
+    [{ volts: 0 }, 'v_ll_avg', 0],
+    [{ current: 1.5 }, 'i_avg', 1.5],
+    [{ amps: 0 }, 'i_avg', 0],
+    [{ amperes: 2 }, 'i_avg', 2],
+    [{ power: -0.955 }, 'kw_total', -0.955],
+    [{ kw: 0 }, 'kw_total', 0]
+  ])('a single flat electrical value is stored: %j', (payload, column, expected) => {
+    const reading = meterReading(payload);
+    expect(Object.entries(reading).filter(([, value]) => value !== null)).toEqual([[column, expected]]);
+  });
+
+  test('a sparse update does not repeat values from the previous message', () => {
+    meterReading({ PowerData: { Average_Current: 2, Total_kW: 3, Total_Active_Energy_kWh: 10 } });
+    const reading = meterReading({ PowerData: { Total_kW: 4 } });
+    expect(reading.kw_total).toBe(4);
+    expect(reading.i_avg).toBeNull();
+    expect(reading.kwh_total).toBeNull();
+  });
+
+  test('invalid new energy aliases cannot create an empty or zero reading', () => {
+    expect(meterReading({ EnergyFormatted: 'unknown', EnergyData: { Total_kWh: -1 } })).toBeNull();
+    expect(meterReading({ EnergyData: [] })).toBeNull();
+  });
+
+  test('a valid flat reading can replace a block value that does not fit its storage column', () => {
+    expect(meterReading({ PowerData: { Average_Voltage_LL: 1e100 }, voltage: 415 }).v_ll_avg).toBe(415);
+  });
+
   test('finite values outside REAL storage bounds stay null and do not poison the reading', () => {
     const r = meterReading({ PowerData: { Voltage_V1N: 1e100, Total_kW: -1e100,
       Frequency: 1e-100, Average_Current: 2, Total_Active_Energy_kWh: 1e100 } });
@@ -199,7 +273,6 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
 
   test.each([
     ['no meter', { machine_status: 'RUN' }],
-    ['only the flat contract keys', { energy: 12.5, voltage: 415 }],
     ['an empty block', { PowerData: {} }],
     ['nothing readable', { PowerData: { Total_kW: 'x' } }],
     ['not a payload', null]

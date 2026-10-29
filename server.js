@@ -4,7 +4,7 @@ import { startHealthServer, setSources } from './health.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
 import { TELEMETRY_COLUMNS, telemetryInsert } from './buffer.js';
-import { missingTelemetryColumns, missingAlarmColumns, missingTables } from './src/lib/schema-check.js';
+import { missingTelemetryColumns, missingAlarmColumns, missingTables, missingMeterSchema } from './src/lib/schema-check.js';
 import { createJournal } from './src/lib/journal.js';
 import { createFlusher } from './src/lib/flusher.js';
 import { createShiftCache } from './src/lib/shifts.js';
@@ -42,15 +42,18 @@ export async function startServer(config) {
        applied, every write would fail. Not subscribing leaves the messages
        queued on the broker (persistent session) until it is fixed. */
     const missing = await missingTelemetryColumns(pool, TELEMETRY_COLUMNS);
-    const missingT = await missingTables(pool, ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings', 'ingest_gaps', 'alarm_notification_events']);
+    const missingT = await missingTables(pool, ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings', 'ingest_gaps', 'alarm_notification_events', 'energy_observations']);
     const missingA = await missingAlarmColumns(pool);
-    if (missing.length || missingT.length || missingA.length) {
+    const missingE = await missingMeterSchema(pool);
+    if (missing.length || missingT.length || missingA.length || missingE.length) {
       log('error', missingA.length || missingT.includes('alarm_notification_events')
         ? 'the alarm priority event schema is missing — apply Backend migration 048_alarm_notification_policies.sql (Backend: npm run migrate), then restart the collector'
         : missing.includes('acc_battery_status') || missing.includes('cnc_battery_warning')
           ? 'FANUC battery diagnostic columns are missing — apply Backend migration 062 (Backend: npm run migrate), then restart the collector'
+          : missingE.length || missingT.includes('energy_observations')
+            ? 'sparse energy storage is missing — apply Backend migration 063_sparse_energy_observations.sql, then restart the collector'
           : 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',
-      { missing_columns: missing, missing_tables: missingT, missing_alarm_columns: missingA });
+      { missing_columns: missing, missing_tables: missingT, missing_alarm_columns: missingA, missing_energy_columns: missingE });
       return process.exit(1);
     }
 

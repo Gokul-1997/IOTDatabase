@@ -70,3 +70,22 @@ test('missing migration 062 identifies the new JSON columns and never subscribes
     exit.mockRestore(); error.mockRestore();
   }
 });
+
+test('missing sparse-energy marker/update grant exits before accepting machine messages', async () => {
+  query.mockImplementation(async sql => {
+    if (sql.includes("table_name = 'telemetry_raw'")) return { rows: [{ column_name: 'machine_id' }] };
+    if (sql.includes("to_regclass('machine_alarms')")) return { rows: ['notification_continuity_started_at',
+      'notification_priority_changed_at','severity_observed_at','severity_received_at','ended_received_at']
+      .map(column_name=>({column_name})) };
+    if (sql.includes("to_regclass('energy_meter_readings')")) return { rows: [] };
+    return { rows: ['ingest_checkpoint','telemetry_late','machine_alarms','energy_meter_readings',
+      'ingest_gaps','alarm_notification_events','energy_observations'].map(table_name=>({table_name})) };
+  });
+  const exit=jest.spyOn(process,'exit').mockImplementation(()=>{});
+  const error=jest.spyOn(console,'error').mockImplementation(()=>{});
+  try {
+    await startServer({});expect(exit).toHaveBeenCalledWith(1);
+    expect(JSON.parse(error.mock.calls[0][0]).msg).toContain('063_sparse_energy_observations.sql');
+    for(const effect of [open,writerStart,shiftStart,startHealthServer,startMQTT])expect(effect).not.toHaveBeenCalled();
+  } finally {exit.mockRestore();error.mockRestore();}
+});

@@ -8,6 +8,8 @@ import path from 'path';
 import { createJournal } from '../src/lib/journal.js';
 import { createFlusher } from '../src/lib/flusher.js';
 import { telemetryInsert } from '../buffer.js';
+import { METER_FIELDS } from '../src/lib/power-signals.js';
+import { METER_INSERT_SQL } from '../src/lib/meter-writer.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'journal-'));
 const quiet = () => {};
@@ -84,7 +86,18 @@ function fakeDb() {
             return { rows: sql.startsWith('INSERT INTO machine_alarms') ? [{ id: 1 }] : [] };
           }
           if (sql.includes('INSERT INTO energy_meter_readings')) {
-            staged.push(() => db.meters.push(params)); return {};
+            if (sql !== METER_INSERT_SQL) throw new Error('meter writes must use the guarded sparse merge');
+            staged.push(() => {
+              const current = db.meters.find(row => row[0] === params[0] && row[2] === params[2]);
+              if (!current) db.meters.push([...params]);
+              else if (current[1] === params[1]) {
+                for (let index = 3; index < params.length - 2; index++) {
+                  if (params[index] != null) current[index] = params[index];
+                }
+                current[current.length - 2] = [...new Set([...(current.at(-2) || []), ...params.at(-2)])];
+                current[current.length - 1] ||= params.at(-1);
+              }
+            }); return {};
           }
           if (sql.includes('INSERT INTO ingest_checkpoint')) {
             if (sql.includes('DO NOTHING')) return {};
@@ -372,6 +385,57 @@ test('alarm/meter operations survive DB outage and lost COMMIT reply exactly wit
   journal.close();
 });
 
+test('meter-only journal records merge same-second fields and preserve zero through retry', async () => {
+  const { db, journal, flusher } = setup();
+  const meter = fields => ({ m: { machineId: 7, companyId: 4, at: 1000, reading: fields, standalone: true } });
+  journal.append(meter({ kw_total: -0.955, kwh_total: 3104 }));
+  journal.append(meter({ i_avg: 19.814 }));
+  const lastSequence = journal.append(meter({ kw_total: 0 }));
+  db.loseCommitReply = true;
+  await expect(flusher.pass()).rejects.toThrow('COMMIT response lost');
+  const committed = structuredClone(db.meters);
+  await drainPasses(flusher);
+  expect(db.meters).toEqual(committed);
+  expect(db.meters).toHaveLength(1);
+  const value = field => db.meters[0][3 + METER_FIELDS.findIndex(([column]) => column === field)];
+  expect(value('kw_total')).toBe(0);
+  expect(value('kwh_total')).toBe(3104);
+  expect(value('i_avg')).toBe(19.814);
+  expect(value('frequency_hz')).toBeNull();
+  expect(db.meters[0].at(-1)).toBe(true);
+  expect(db.telemetry).toHaveLength(0);
+  expect(db.hourly.size).toBe(0);
+  expect(db.checkpoint.get('c1')).toBe(lastSequence);
+  journal.close();
+});
+
+test('a conflicting company cannot replace another company’s same-second meter values', async () => {
+  const { db, journal, flusher } = setup();
+  for (const companyId of [4, 5, null]) {
+    journal.append({ m: { machineId: 7, companyId, at: 1000,
+      reading: { kwh_total: companyId === 4 ? 3104 : 9999 } } });
+  }
+  await drainPasses(flusher);
+  expect(db.meters).toHaveLength(1);
+  expect(db.meters[0][1]).toBe(4);
+  expect(db.meters[0][3 + METER_FIELDS.findIndex(([column]) => column === 'kwh_total')]).toBe(3104);
+  journal.close();
+});
+
+test.each([[[false, true, false]], [[true, false]], [[false, false]]])(
+  'same-second standalone provenance remains sticky across marker sequence %j', async markers => {
+    const { db, journal, flusher } = setup();
+    for (const standalone of markers) {
+      journal.append({ m: { machineId: 7, companyId: 4, at: 1000,
+        reading: { kw_total: 1 }, standalone } });
+    }
+    await drainPasses(flusher);
+    expect(db.meters).toHaveLength(1);
+    expect(db.meters[0].at(-1)).toBe(markers.includes(true));
+    journal.close();
+  }
+);
+
 
 test('unallocatable gap provenance commits once and never adds unverified hourly parts', async () => {
   const { db, journal, flusher } = setup();
@@ -388,14 +452,17 @@ test('unallocatable gap provenance commits once and never adds unverified hourly
 
 test('an energy-only observation gap persists zero added state seconds and its exact unallocated delta', async () => {
   const { db, journal, flusher } = setup();
-  const record = reading(7, 100);
-  record.h = [];
+  const receivedAt = '2026-10-29T00:00:00.000Z';
+  const record = { m: { machineId: 7, companyId: 4, at: 100,
+    reading: { kwh_total: 3104 }, standalone: true } };
   record.gap = { company_id: 4, machine_id: 7, from: 1, to: 100,
     known_state_seconds: 0, unallocated_parts: 0, unallocated_energy: 0.002,
-    reason: 'observations_missing' };
+    reason: 'observations_missing', received_at: receivedAt };
   journal.append(record);
   await drainPasses(flusher);
   expect(db.gaps).toHaveLength(1);
   expect(db.gaps[0].slice(7, 10)).toEqual([0, 0, 0.002]);
+  expect(db.gaps[0][11]).toBe(receivedAt);
+  expect(db.telemetry).toHaveLength(0);
   expect(db.hourly.size).toBe(0); journal.close();
 });
