@@ -68,3 +68,18 @@ export function partsDelta(prevCount, currCount, gapSeconds = 0) {
 
   return delta;
 }
+
+/** Keep a counter high-water mark across unexplained backward readings.
+ * A 11 → 5 → 11 oscillation is not six new parts on every rebound. Only a
+ * confirmed reset near zero may lower the baseline. Raw readings remain
+ * unchanged for diagnosis; an ambiguous reset can undercount, never invent
+ * its missing output. The caller journals this baseline with the reading.
+ */
+export function partsCounterStep(previous, current, gapSeconds = 0) {
+  const baseline = partsCountOf(previous);
+  const count = partsCountOf(current);
+  if (count === null) return { delta: 0, baseline, regressed: false };
+  if (baseline === null) return { delta: 0, baseline: count, regressed: false };
+  if (count < baseline && count > 2) return { delta: 0, baseline, regressed: true };
+  return { delta: partsDelta(baseline, count, gapSeconds), baseline: count, regressed: false };
+}

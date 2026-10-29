@@ -1,5 +1,5 @@
 import { hourlySlices, istHourStart } from './hourly.js';
-import { partsDelta, partsCountOf } from './parts-delta.js';
+import { partsCounterStep, partsCountOf } from './parts-delta.js';
 import { energyStep } from './energy-step.js';
 import { powerSignals, meterReading } from './power-signals.js';
 import { conditionSignals, isAlarming, isDisconnected, controllerIdentity, focasResult, activeAlarms } from './condition-signals.js';
@@ -129,9 +129,18 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
     gapSeconds = Math.max(0, deviceTime - prevReceivedAt);
   }
 
-  const producedDelta = prevPartsCount != null && partsCount != null
-    ? partsDelta(prevPartsCount, partsCount, gapSeconds)
-    : 0;
+  const counterBaseline = partsCountOf(prev?.parts_baseline) ?? prevPartsCount;
+  const counter = partsCounterStep(counterBaseline, partsCount, gapSeconds);
+  const producedDelta = counter.delta;
+  const counterRecovered = partsCount != null &&
+    (counterBaseline == null || partsCount <= 2 || partsCount > Number(counterBaseline));
+  const counterUncertain = counter.regressed || (!!prev?.parts_counter_uncertain && !counterRecovered);
+  if (counter.regressed) {
+    count('parts_counter_regression');
+    if (!prev?.parts_counter_uncertain) log('warn', 'parts counter moved backward; holding production baseline', {
+      machine_id: machine.id, baseline: Number(counterBaseline), reported: partsCount
+    });
+  }
 
   /* Compared with the last real meter reading, kept in the live state, so a
      dropped read (0) or a misread cannot book the whole meter total as one
@@ -223,6 +232,8 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
       spindle_load:   payload.spindle_load ?? 0,
       feed_rate:      payload.feed_rate    ?? 0,
       parts_count:    partsCount ?? prevPartsCount,
+      parts_baseline: counter.baseline,
+      parts_counter_uncertain: counterUncertain,
       cutting_speed:  payload.cutting_speed ?? 0,
       energy,
       energy_meter:    energyNow?.meter ?? null,
