@@ -9,7 +9,7 @@ import { createJournal } from '../src/lib/journal.js';
 import { createFlusher } from '../src/lib/flusher.js';
 import { telemetryInsert } from '../buffer.js';
 import { METER_FIELDS } from '../src/lib/power-signals.js';
-import { METER_INSERT_SQL } from '../src/lib/meter-writer.js';
+import { METER_BATCH_INSERT_SQL } from '../src/lib/meter-writer.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'journal-'));
 const quiet = () => {};
@@ -20,7 +20,7 @@ const quiet = () => {};
  * failure part-way through a batch leaves nothing behind — as Postgres does.
  */
 function fakeDb() {
-  const db = { telemetry: [], late: [], alarms: [], alarmEvents: [], notifications: [], meters: [], gaps: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, refuseQuery: null, queries: 0, loseCommitReply: false };
+  const db = { telemetry: [], late: [], alarms: [], alarmEvents: [], notifications: [], meters: [], meterQueries: 0, gaps: [], hourly: new Map(), checkpoint: new Map(), down: false, poison: null, refuseQuery: null, queries: 0, loseCommitReply: false };
   db.pool = {
     async query(sql, params) {
       if (db.down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
@@ -86,16 +86,22 @@ function fakeDb() {
             return { rows: sql.startsWith('INSERT INTO machine_alarms') ? [{ id: 1 }] : [] };
           }
           if (sql.includes('INSERT INTO energy_meter_readings')) {
-            if (sql !== METER_INSERT_SQL) throw new Error('meter writes must use the guarded sparse merge');
+            if (sql !== METER_BATCH_INSERT_SQL) throw new Error('meter writes must use the guarded sparse batch merge');
+            db.meterQueries++;
+            const meterRows = params[0].map((_, row) => params.map((column, index) =>
+              index === params.length - 2 ? JSON.parse(column[row]) : column[row]));
             staged.push(() => {
-              const current = db.meters.find(row => row[0] === params[0] && row[2] === params[2]);
-              if (!current) db.meters.push([...params]);
-              else if (current[1] === params[1]) {
-                for (let index = 3; index < params.length - 2; index++) {
-                  if (params[index] != null) current[index] = params[index];
+              for (const meter of meterRows) {
+                const current = db.meters.find(row => row[0] === meter[0] && row[2] === meter[2]);
+                if (!current) { db.meters.push([...meter]); continue; }
+                if (current[1] !== meter[1]) continue;
+                for (let index = 3; index < meter.length - 2; index++) {
+                  const field = METER_FIELDS[index - 3][0];
+                  if (current.at(-2).includes(field) && !meter.at(-2).includes(field)) continue;
+                  if (meter[index] != null) current[index] = meter[index];
                 }
-                current[current.length - 2] = [...new Set([...(current.at(-2) || []), ...params.at(-2)])];
-                current[current.length - 1] ||= params.at(-1);
+                current[current.length - 2] = [...new Set([...(current.at(-2) || []), ...meter.at(-2)])];
+                current[current.length - 1] ||= meter.at(-1);
               }
             }); return {};
           }
@@ -419,6 +425,44 @@ test('a conflicting company cannot replace another company’s same-second meter
   expect(db.meters).toHaveLength(1);
   expect(db.meters[0][1]).toBe(4);
   expect(db.meters[0][3 + METER_FIELDS.findIndex(([column]) => column === 'kwh_total')]).toBe(3104);
+  journal.close();
+});
+
+test('a full journal batch uses one meter query and retains per-field standalone priority', async () => {
+  const { db, journal, flusher } = setup();
+  for (let offset = 0; offset < 48; offset++) {
+    journal.append({ m: { machineId: 7, companyId: 4, at: 1000 + offset,
+      reading: { kw_total: offset, i_avg: 2 }, standalone: true } });
+  }
+  journal.append({ m: { machineId: 7, companyId: 4, at: 1000,
+    reading: { kw_total: 9999, frequency_hz: 50 } } });
+  journal.append({ m: { machineId: 7, companyId: 4, at: 1000,
+    reading: { i_avg: 3 }, standalone: true } });
+  await drainPasses(flusher);
+  expect(db.meterQueries).toBe(1);
+  expect(db.meters).toHaveLength(48);
+  const row = db.meters.find(value => value[2] === 1000);
+  const value = field => row[3 + METER_FIELDS.findIndex(([column]) => column === field)];
+  expect(value('kw_total')).toBe(0);
+  expect(value('i_avg')).toBe(3);
+  expect(value('frequency_hz')).toBe(50);
+  journal.close();
+});
+
+test('a rejected meter batch isolates the bad journal record and commits its healthy neighbors once', async () => {
+  const { db, journal, flusher } = setup();
+  const index = 3 + METER_FIELDS.findIndex(([column]) => column === 'kw_total');
+  db.refuseQuery = (sql, values) => sql === METER_BATCH_INSERT_SQL && values[index].includes(9999)
+    ? Object.assign(new Error('meter value out of range'), { code: '22003' }) : null;
+  let finalSequence;
+  for (const [offset, kw] of [1, 9999, 3].entries()) {
+    finalSequence = journal.append({ m: { machineId: 7, companyId: 4, at: 1000 + offset, reading: { kw_total: kw } } });
+  }
+  await drainPasses(flusher);
+  expect(db.meters.map(row => row[index])).toEqual([1, 3]);
+  expect(flusher.stats().bad_records).toBe(1);
+  expect(db.checkpoint.get('c1')).toBe(finalSequence);
+  expect(journal.stats().pending).toBe(0);
   journal.close();
 });
 

@@ -1,4 +1,4 @@
-import { normalizeMachineState, parseEnergy } from '../src/lib/normalize-status.js';
+import { normalizeMachineState, parseEnergy, parsePower } from '../src/lib/normalize-status.js';
 
 describe('normalizeMachineState', () => {
   test.each([
@@ -37,7 +37,8 @@ describe('parseEnergy', () => {
     ['error123', null],
     ['1.2.3', null],
     ['12 kWh unavailable', null],
-    ['12 MWh', null],
+    ['12 MWh', 12000],
+    ['12000 Wh', 12],
     ['1e999', null],
     ['9'.repeat(400), null],
     [true, null],
@@ -51,5 +52,33 @@ describe('parseEnergy', () => {
     ['',        null]
   ])('%j → %j', (input, expected) => {
     expect(parseEnergy(input)).toBe(expected);
+  });
+});
+
+describe('explicit electrical units', () => {
+  test.each([
+    [1000, 'Wh', 1], [1, 'MWh', 1000], ['1,5', 'MWh', 1500],
+    ['1e3 Wh', 'Wh', 1], ['+12 KWH', 'kWh', 12], [0, 'Wh', 0],
+    [1, 'kW', null], ['1 kW', undefined, null], [1, 'kVAh', null],
+    [1, 'GW', null], [1, null, null], ['1 MWh', 'kWh', null],
+    ['1 mWh', undefined, null], [1, 'mwh', null],
+    ['-1 Wh', undefined, null], ['1e308 MWh', undefined, null],
+    [1e-323, 'Wh', null],
+  ])('energy %j with metadata %j becomes %j kWh', (value, unit, expected) => {
+    expect(parseEnergy(value, unit)).toBe(expected);
+  });
+
+  test.each([
+    [2, undefined, 2], [-2, undefined, -2], ['-1500 W', undefined, -1.5],
+    ['0.002 MW', undefined, 2], ['+2,5 kW', undefined, 2.5],
+    [-1500, 'W', -1.5], [0.002, 'MW', 2], ['1e3', 'W', 1],
+    [0, 'W', 0], ['-0 kW', undefined, 0],
+    ['1 kWh', undefined, null], [1, 'Wh', null], ['1 W', 'kW', null],
+    ['1 mW', undefined, null], [1, 'mw', null],
+    ['1 kW unavailable', undefined, null], [1, 'horsepower', null],
+    [Infinity, undefined, null], ['1e308 MW', undefined, null],
+    [true, undefined, null], [{ value: 2 }, undefined, null],
+  ])('power %j with metadata %j becomes %j kW', (value, unit, expected) => {
+    expect(parsePower(value, unit)).toBe(expected);
   });
 });

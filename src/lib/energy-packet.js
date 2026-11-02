@@ -4,7 +4,8 @@ import { meterReading } from './power-signals.js';
 // CNC snapshots keep their existing contract. Only a recognized electrical
 // observation accompanied by transport metadata can use the independent lane.
 const ENERGY = new Set(['powerdata', 'power_data', 'energy', 'energyformatted', 'energy_formatted',
-  'energydata', 'energy_data', 'voltage', 'volts', 'current', 'amps', 'amperes', 'power', 'kw']);
+  'energydata', 'energy_data', 'energy_unit', 'power_unit',
+  'voltage', 'volts', 'current', 'amps', 'amperes', 'power', 'kw']);
 const METADATA = new Set(['time', 'machine_ip', 'connection']);
 export function isEnergyPacket(payload) {
   const p = canonicalPayload(payload);

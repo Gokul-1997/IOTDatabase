@@ -49,9 +49,16 @@ export function createMessageProcessor({ journal, shifts, lookupMachine, hydrate
     await journal.syncThrough(seq);
   }
   async function keepLate(machine, payload, deviceTime, receivedAt, reason) {
+    // Controller ordering protects live CNC state, but valid historical meter
+    // fields still belong in the electrical timeline. The DB reconciler can
+    // replay their affected intervals without inventing runtime or freshness.
+    const reading = meterReading(payload);
     await admit({ l: { machine_id: machine.id, company_id: machine.company_id,
-      device_time: deviceTime, received_at: receivedAt, reason, payload } });
+      device_time: deviceTime, received_at: receivedAt, reason, payload },
+      ...(reading ? { m: { machineId: machine.id, companyId: machine.company_id,
+        at: deviceTime, reading, standalone: isEnergyPacket(payload) } } : {}) });
     count(`late_${reason}`);
+    if (reading) count('energy_late_accepted');
   }
   async function publishLive(machine, livePayload, lastKey, liveKey) {
     if (!redis?.isReady) { count('redis_degraded'); return; }
@@ -94,7 +101,9 @@ async function handleEnergy(machine, payload, deviceTime, receivedAt, hash) {
   const gap = delta > 0 && span > 60 ? {
     company_id: machine.company_id, machine_id: machine.id, from, to: deviceTime,
     known_state_seconds: 0, unallocated_parts: 0, unallocated_energy: delta,
-    reason: 'energy_observations_missing', received_at: receivedAt
+    // Shared DB constraint also covers meter-only gaps; the zero known-state
+    // seconds preserve that this observation did not establish CNC runtime.
+    reason: 'observations_missing', received_at: receivedAt
   } : null;
   let slices = [];
   if (delta > 0 && !gap) {

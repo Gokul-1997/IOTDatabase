@@ -37,7 +37,7 @@
  */
 
 import { canonicalPayload } from './condition-signals.js';
-import { parseEnergy } from './normalize-status.js';
+import { parseEnergy, parsePower } from './normalize-status.js';
 
 const isBlock = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 // Migration029 uses REAL for instantaneous readings, DOUBLE PRECISION for
@@ -81,13 +81,28 @@ function firstReading(values, read) {
 
 function readingCandidates(top, m) {
   const energy = namedBlock(top, ['energydata', 'energy_data']);
+  const quantity = (value, unit) => ({ value, unit });
   return {
-    kwh_total: [top.energy, top.energyformatted, top.energy_formatted, energy.total_kwh, m.total_active_energy_kwh],
+    kwh_total: [
+      quantity(top.energy, top.energy_unit),
+      quantity(top.energyformatted, top.energy_unit),
+      quantity(top.energy_formatted, top.energy_unit),
+      quantity(energy.total_kwh, 'kWh'),
+      quantity(energy.total_wh, 'Wh'),
+      quantity(energy.total_mwh, 'MWh'),
+      // A generic nested value needs its own explicit unit. An omitted unit
+      // must not turn an ambiguous device-specific value into a kWh reading.
+      quantity(energy.value, energy.unit === undefined ? null : energy.unit),
+      quantity(m.total_active_energy_kwh, 'kWh'),
+    ],
     v_ll_avg: [m.average_voltage_ll, top.voltage, top.volts],
     i_avg: [m.average_current, top.current, top.amps, top.amperes],
-    kw_total: [m.total_kw, top.power, top.kw]
+    kw_total: [quantity(m.total_kw, 'kW'), quantity(top.power, top.power_unit), quantity(top.kw, 'kW')]
   };
 }
+
+const energyQuantity = candidate => parseEnergy(candidate.value, candidate.unit);
+const powerQuantity = candidate => parsePower(candidate.value, candidate.unit);
 
 export function powerSignals(payload) {
   const p   = canonicalPayload(payload);
@@ -96,10 +111,10 @@ export function powerSignals(payload) {
   const candidates = readingCandidates(top, m);
 
   return {
-    energy:  firstReading(candidates.kwh_total, parseEnergy),
+    energy:  firstReading(candidates.kwh_total, energyQuantity),
     voltage: firstReading(candidates.v_ll_avg, v => meterNumber(v, true)),
     current: firstReading(candidates.i_avg, v => meterNumber(v, true)),
-    power:   firstReading(candidates.kw_total, meterNumber)
+    power:   firstReading(candidates.kw_total, powerQuantity)
   };
 }
 
@@ -155,7 +170,12 @@ export function meterReading(payload) {
   for (const [column, key] of METER_FIELDS) {
     const unsigned = /^(?:v\d|v_ln|v_ll|i\d|i_avg|kva(?:\d|_total|_demand)|kwh|kvarh|kvah|run_hours|aux_interrupts)/.test(column);
     const value = firstReading(candidates[column] ?? [m[key]], candidate => {
-      let value = column === 'kwh_total' ? parseEnergy(candidate) : meterNumber(candidate, unsigned);
+      let value;
+      if (column === 'kwh_total') value = energyQuantity(candidate);
+      else if (column === 'kw_total') value = powerQuantity(candidate);
+      else if (/^kwh_/.test(column)) value = parseEnergy(candidate, 'kWh');
+      else if (/^kw(?:\d|_demand)/.test(column)) value = parsePower(candidate, 'kW');
+      else value = meterNumber(candidate, unsigned);
       if (value === null) return null;
       if (column === 'aux_interrupts') {
         value = Math.trunc(value);

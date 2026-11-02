@@ -43,7 +43,7 @@ test('meter-only counter delta is allocated once without CNC time/parts',async()
 });
 test('long change-only gaps retain measured energy without guessing a shift',async()=>{
  const f=fixture();await f.send(0,{time,EnergyFormatted:100});await f.send(90,{time:time+90,EnergyFormatted:101});
- expect(f.records[1].h).toEqual([]);expect(f.records[1].gap).toMatchObject({unallocated_energy:1,known_state_seconds:0,received_at:new Date((time+90)*1000).toISOString()});expect(f.processor.state(7).unallocated_energy).toBe(1);
+ expect(f.records[1].h).toEqual([]);expect(f.records[1].gap).toMatchObject({unallocated_energy:1,known_state_seconds:0,reason:'observations_missing',received_at:new Date((time+90)*1000).toISOString()});expect(f.processor.state(7).unallocated_energy).toBe(1);
 });
 test('meter ordering does not reject a separately delayed CNC snapshot',async()=>{
  const f=fixture();await f.send(0,{time,machine_status:'RUN',parts_count:100,Energy:100});await f.send(10,{time:time+10,EnergyFormatted:101});
@@ -67,4 +67,50 @@ test('a conflicting same-second full snapshot cannot lower an independent energy
  await f.send(11,{time:time+11,EnergyFormatted:101.5});
  expect(f.records.flatMap(r=>r.h||[]).reduce((s,r)=>s+r.energy,0)).toBe(1.5);
  expect(f.processor.state(7).energy_meter).toBe(101.5);
+});
+
+test('late standalone energy persists with its event time and receipt audit without changing live state',async()=>{
+ const f=fixture();
+ await f.send(0,{time,machine_status:'RUN',parts_count:100,Energy:100});
+ const before=f.processor.state(7);
+ const payload={time:time+5,EnergyFormatted:100.25,PowerData:{Total_kW:0}};
+ await f.send(400,payload);
+ const record=f.records[1];
+ expect(record.l).toMatchObject({device_time:time+5,reason:'stale',received_at:new Date((time+400)*1000).toISOString(),payload});
+ expect(record.m).toMatchObject({machineId:7,companyId:4,at:time+5,standalone:true,reading:{kwh_total:100.25,kw_total:0}});
+ expect(record.r).toBeUndefined();expect(record.a).toBeUndefined();expect(record.h).toBeUndefined();expect(record.state).toBeUndefined();
+ expect(f.processor.state(7)).toEqual(before);
+ await f.send(400,payload);
+ expect(f.records).toHaveLength(2);
+});
+
+test('out-of-order meter observation is repairable without rewinding the live high-water state',async()=>{
+ const f=fixture();
+ await f.send(0,{time,EnergyFormatted:100});
+ await f.send(10,{time:time+10,EnergyFormatted:101});
+ const before=f.processor.state(7);
+ await f.send(15,{time:time+5,EnergyData:{Total_kWh:100.5}});
+ expect(f.records[2]).toMatchObject({l:{reason:'out_of_order',device_time:time+5},m:{at:time+5,standalone:true,reading:{kwh_total:100.5}}});
+ expect(f.records[2].state).toBeUndefined();expect(f.processor.state(7)).toEqual(before);
+ await f.send(20,{time:time+20,EnergyFormatted:101.5});
+ expect(f.records.flatMap(r=>r.h||[]).reduce((sum,slice)=>sum+slice.energy,0)).toBe(1.5);
+ expect(f.processor.state(7).energy_meter).toBe(101.5);
+});
+
+test('late full CNC snapshot stores only its supplied meter fields beside the unchanged late audit',async()=>{
+ const f=fixture();
+ await f.send(10,{time:time+10,machine_status:'RUN',parts_count:101,Energy:101});
+ const before=f.processor.state(7);
+ await f.send(20,{time:time+5,machine_status:'IDLE',parts_count:999,stat_alarm:1,Energy:100.5,PowerData:{Frequency:50}});
+ const record=f.records[1];
+ expect(record).toMatchObject({l:{reason:'out_of_order'},m:{at:time+5,standalone:false,reading:{kwh_total:100.5,frequency_hz:50}}});
+ expect(record.r).toBeUndefined();expect(record.a).toBeUndefined();expect(record.h).toBeUndefined();
+ expect(f.processor.state(7)).toEqual(before);
+});
+
+test('late invalid electrical values stay in audit without creating a measurement or fresh state',async()=>{
+ const f=fixture();
+ await f.send(400,{time,EnergyFormatted:'unknown',machine_status:'RUN'});
+ expect(f.records[0].l.reason).toBe('stale');expect(f.records[0].m).toBeUndefined();
+ expect(f.processor.state(7)).toBeUndefined();expect(f.publish).not.toHaveBeenCalled();
 });

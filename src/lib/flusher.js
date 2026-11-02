@@ -26,8 +26,7 @@
 import { sumSlices } from './hourly.js';
 import { writeAlarmTransition } from './alarm-transition.js';
 import { alarmFields } from './alarm-text.js';
-import { METER_FIELDS } from './power-signals.js';
-import { METER_INSERT_SQL } from './meter-writer.js';
+import { meterInsertBatches } from './meter-writer.js';
 
 export function isDataError(err) {
   return !!err && typeof err.code === 'string' && (err.code.startsWith('22') || err.code.startsWith('23'));
@@ -157,12 +156,11 @@ export function createFlusher({ pool, journal, collectorId, telemetryInsert, log
           gap.received_at || record.r?.received_at]));
       }
       if (record.a) await atStage('machine_alarms', () => writeAlarmTransition(client, record.a));
-      if (record.m) {
-        const { machineId, companyId, at, reading, standalone } = record.m;
-        await atStage('energy_meter_readings', () => client.query(METER_INSERT_SQL,
-        [machineId, companyId, at, ...METER_FIELDS.map(([c]) => reading[c] ?? null),
-          standalone ? METER_FIELDS.filter(([c]) => reading[c] != null).map(([c]) => c) : [], standalone === true]));
-      }
+    }
+    // Merge sparse meter updates before a bounded, typed-array UPSERT. Keep
+    // all batches in this transaction so quarantine/replay remain unchanged.
+    for (const { text, values } of meterInsertBatches(records.filter(record => record.m).map(record => record.m))) {
+      await atStage('energy_meter_readings', () => client.query(text, values));
     }
     return written;
   }

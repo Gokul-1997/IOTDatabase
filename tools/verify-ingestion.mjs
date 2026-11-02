@@ -11,6 +11,7 @@ import { createMessageProcessor } from '../src/lib/message-processor.js';
 import { telemetryInsert, TELEMETRY_COLUMNS } from '../buffer.js';
 import { METER_FIELDS } from '../src/lib/power-signals.js';
 import { alarmKey, alarmTransition, writeAlarmTransition } from '../src/lib/alarm-transition.js';
+import { verifyMeterBatches } from './verify-meter-batch.mjs';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cnc-pg-ingest-'));
 const binary = name => ['/opt/homebrew/bin', '/usr/lib/postgresql/18/bin', '/usr/lib/postgresql/17/bin', '/usr/bin']
@@ -48,12 +49,15 @@ try {
       notification_continuity_started_at timestamptz);
     CREATE UNIQUE INDEX alarm_open ON machine_alarms(machine_id, COALESCE(alarm_code, alarm_type)) WHERE ended_at IS NULL;
     CREATE TABLE energy_meter_readings(machine_id int, company_id int, read_at timestamptz,
-      ${METER_FIELDS.map(([column]) => `${column} double precision`).join(',')}, PRIMARY KEY(machine_id,read_at));`);
+      received_at timestamptz NOT NULL DEFAULT now(),
+      ${METER_FIELDS.map(([column]) => `${column} ${column === 'aux_interrupts' ? 'integer' : /^(?:kwh_|kvarh_|kvah_|run_hours$)/.test(column) ? 'double precision' : 'real'}`).join(',')},
+      PRIMARY KEY(machine_id,read_at));`);
   const migration = fs.readFileSync(new URL('../../Backend/src/migrations/043_ingest_gaps.sql', import.meta.url), 'utf8');
   await pool.query('CREATE ROLE machine_api_user NOLOGIN');
   await pool.query(migration); await pool.query(migration); // additive/idempotent
   await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/047_alarm_notifications.sql', import.meta.url), 'utf8'));
   await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/048_alarm_notification_policies.sql', import.meta.url), 'utf8'));
+  await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/063_sparse_energy_observations.sql', import.meta.url), 'utf8'));
   const rights = (await pool.query(`SELECT has_table_privilege('machine_api_user','ingest_gaps','SELECT') AS can_read,
     has_table_privilege('machine_api_user','ingest_gaps','INSERT') AS can_insert,
     has_table_privilege('machine_api_user','ingest_gaps','UPDATE') AS can_update,
@@ -153,7 +157,34 @@ try {
   await writeAlarmTransition(pool, alarmTransition({ ...transitionBase, deviceTime: transitionBase.deviceTime + 5,
     prev: { alarm: true, alarm_codes: longCodes.map(alarmKey) }, alarms: [longCodes[1]], isAlarm: true }));
   assert.deepEqual((await pool.query('SELECT alarm_code FROM machine_alarms WHERE ended_at IS NULL')).rows.map(r => r.alarm_code), [alarmKey(longCodes[1])]);
-  console.log('PASS disposable PostgreSQL: raw + hourly + alarm open/close + durable priority event + meter commit exactly once through Redis outage, DB outage and lost COMMIT reply; 043/048 tenant integrity and collector grants; short critical outbox survives clear; real VARCHAR(50) alarm fields preserve Unicode and full text, distinguish long labels, close, reopen and reconcile.');
+
+  // Long standalone energy gaps must pass the real CHECK constraint instead
+  // of quarantining an otherwise valid measurement. Late fields then repair
+  // only the electrical source; the live CNC state and hourly parts stay put.
+  await processor.handleMessage('device', { time: time + 86410, EnergyFormatted: 121 }, (time + 86410) * 1000);
+  await flusher.pass();
+  const energyGap = (await pool.query('SELECT * FROM ingest_gaps WHERE known_state_seconds=0')).rows[0];
+  assert.equal(energyGap.reason, 'observations_missing');
+  assert.equal(Number(energyGap.unallocated_energy_kwh), 1);
+  const beforeLate = processor.state(7);
+  const receipt = (time + 86411) * 1000;
+  await processor.handleMessage('device', { time: time + 86300, EnergyFormatted: 120.5 }, receipt);
+  await flusher.pass();
+  const lateMeter = (await pool.query('SELECT * FROM energy_meter_readings WHERE read_at=to_timestamp($1)', [time + 86300])).rows[0];
+  assert.equal(Number(lateMeter.kwh_total), 120.5);
+  assert.equal(lateMeter.standalone, true);
+  const lateAudit = (await pool.query('SELECT * FROM telemetry_late WHERE device_time=$1', [time + 86300])).rows[0];
+  assert.equal(lateAudit.reason, 'out_of_order');
+  assert.equal(lateAudit.received_at.getTime(), receipt);
+  assert.deepEqual(processor.state(7), beforeLate);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM telemetry_raw')).rows[0].n, 4);
+  assert.equal((await pool.query('SELECT sum(produced_qty)::int AS n FROM production_hourly')).rows[0].n, 2);
+  assert.equal(flusher.stats().bad_records, 0);
+  const batchClient = await pool.connect();
+  let batchResult;
+  try { batchResult = await verifyMeterBatches(batchClient); } finally { batchClient.release(); }
+  console.log('PASS disposable PostgreSQL: raw + hourly + alarm open/close + durable priority event + meter commit exactly once through Redis outage, DB outage and lost COMMIT reply; 043/048 tenant integrity and collector grants; short critical outbox survives clear; real VARCHAR(50) alarm fields preserve Unicode and full text, distinguish long labels, close, reopen and reconcile; sparse long gaps meet the actual CHECK constraint; late meter fields preserve event/receipt provenance without live CNC effects.');
+  console.log(JSON.stringify({ result: 'PASS meter batch equivalence', ...batchResult }));
 } finally {
   journal?.close();
   await pool?.end();
