@@ -7,7 +7,8 @@
  */
 
 import { jest } from '@jest/globals';
-import { missingTelemetryColumns, missingAlarmColumns } from '../src/lib/schema-check.js';
+import { missingTelemetryColumns, missingAlarmColumns, missingMeterSchema } from '../src/lib/schema-check.js';
+import { METER_FIELDS } from '../src/lib/power-signals.js';
 
 const poolWith = names => ({
   query: jest.fn(async () => ({ rows: names.map(column_name => ({ column_name })) }))
@@ -61,4 +62,25 @@ test('a collector deployed before migration 048 identifies its missing alarm col
 test('migration 048 satisfies the alarm schema guard', async () => {
   expect(await missingAlarmColumns(poolWith(['notification_continuity_started_at',
     'notification_priority_changed_at', 'severity_observed_at', 'severity_received_at', 'ended_received_at']))).toEqual([]);
+});
+
+const meterSchema = () => [...METER_FIELDS.map(([column]) => column), 'standalone', 'standalone_fields']
+  .map(column_name => ({ column_name, can_update: true }));
+
+test('the meter startup guard validates every generated column and its merge privilege', async () => {
+  const pool = { query: jest.fn(async () => ({ rows: meterSchema() })) };
+  expect(await missingMeterSchema(pool)).toEqual([]);
+  expect(pool.query.mock.calls[0][1][0]).toEqual(meterSchema().map(row => row.column_name));
+});
+
+test('missing migration 066 reports the THD columns before any batch is accepted', async () => {
+  const pool = { query: async () => ({ rows: meterSchema().filter(row => !row.column_name.startsWith('thd_')) }) };
+  expect(await missingMeterSchema(pool)).toEqual(METER_FIELDS.filter(([column]) => column.startsWith('thd_'))
+    .map(([column]) => `energy_meter_readings.${column}/UPDATE`));
+});
+
+test('a present meter column without UPDATE still prevents admission', async () => {
+  const rows = meterSchema();
+  rows.find(row => row.column_name === 'thd_i1').can_update = false;
+  expect(await missingMeterSchema({ query: async () => ({ rows }) })).toEqual(['energy_meter_readings.thd_i1/UPDATE']);
 });

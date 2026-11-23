@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import { METER_FIELDS } from '../src/lib/power-signals.js';
 
 // Mock service boundaries before importing the entry module: this test must
 // never read .env, open the operational journal or contact live services.
@@ -77,7 +78,7 @@ test('missing sparse-energy marker/update grant exits before accepting machine m
     if (sql.includes("to_regclass('machine_alarms')")) return { rows: ['notification_continuity_started_at',
       'notification_priority_changed_at','severity_observed_at','severity_received_at','ended_received_at']
       .map(column_name=>({column_name})) };
-    if (sql.includes("to_regclass('energy_meter_readings')")) return { rows: [] };
+    if (sql.includes("to_regclass('energy_meter_readings')")) return { rows: METER_FIELDS.map(([column_name]) => ({column_name,can_update:true})) };
     return { rows: ['ingest_checkpoint','telemetry_late','machine_alarms','energy_meter_readings',
       'ingest_gaps','alarm_notification_events','energy_observations'].map(table_name=>({table_name})) };
   });
@@ -88,4 +89,22 @@ test('missing sparse-energy marker/update grant exits before accepting machine m
     expect(JSON.parse(error.mock.calls[0][0]).msg).toContain('063_sparse_energy_observations.sql');
     for(const effect of [open,writerStart,shiftStart,startHealthServer,startMQTT])expect(effect).not.toHaveBeenCalled();
   } finally {exit.mockRestore();error.mockRestore();}
+});
+
+test('missing THD migration exits with migration 066 guidance before MQTT admission', async () => {
+  const priorQuery = query.getMockImplementation();
+  query.mockImplementation(async sql => sql.includes("to_regclass('energy_meter_readings')")
+    ? { rows: [...METER_FIELDS.filter(([column]) => !column.startsWith('thd_')).map(([column]) => column),
+      'standalone', 'standalone_fields'].map(column_name => ({ column_name, can_update: true })) }
+    : priorQuery(sql));
+  const exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await startServer({});
+    expect(exit).toHaveBeenCalledWith(1);
+    const log = JSON.parse(error.mock.calls[0][0]);
+    expect(log.msg).toContain('066_energy_meter_thd.sql');
+    expect(log.missing_energy_columns).toContain('energy_meter_readings.thd_v1n/UPDATE');
+    for (const effect of [open, writerStart, shiftStart, startHealthServer, startMQTT]) expect(effect).not.toHaveBeenCalled();
+  } finally { exit.mockRestore(); error.mockRestore(); }
 });

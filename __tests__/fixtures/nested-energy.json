@@ -1,0 +1,343 @@
+{
+  "machine": "VMC9",
+  "timestamp": "2026-11-18T17:31:21.351Z",
+  "voltage": {
+    "V1N": {
+      "parameter": "Voltage V1N",
+      "value": 239.97,
+      "unit": "V"
+    },
+    "V2N": {
+      "parameter": "Voltage V2N",
+      "value": 239.03,
+      "unit": "V"
+    },
+    "V3N": {
+      "parameter": "Voltage V3N",
+      "value": 239.42,
+      "unit": "V"
+    },
+    "average_LN": {
+      "parameter": "Average Voltage LN",
+      "value": 239.47,
+      "unit": "V"
+    },
+    "V12": {
+      "parameter": "Voltage V12",
+      "value": 414.97,
+      "unit": "V"
+    },
+    "V23": {
+      "parameter": "Voltage V23",
+      "value": 413.66,
+      "unit": "V"
+    },
+    "V31": {
+      "parameter": "Voltage V31",
+      "value": 415.72,
+      "unit": "V"
+    },
+    "average_LL": {
+      "parameter": "Average Voltage LL",
+      "value": 414.78,
+      "unit": "V"
+    },
+    "maximum": {
+      "V1N": {
+        "parameter": "Maximum Voltage V1N",
+        "value": 267.69,
+        "unit": "V"
+      },
+      "V2N": {
+        "parameter": "Maximum Voltage V2N",
+        "value": 266.6,
+        "unit": "V"
+      },
+      "V3N": {
+        "parameter": "Maximum Voltage V3N",
+        "value": 268.13,
+        "unit": "V"
+      },
+      "V12": {
+        "parameter": "Maximum Voltage V12",
+        "value": 462.25,
+        "unit": "V"
+      },
+      "V23": {
+        "parameter": "Maximum Voltage V23",
+        "value": 462.58,
+        "unit": "V"
+      },
+      "V31": {
+        "parameter": "Maximum Voltage V31",
+        "value": 465.01,
+        "unit": "V"
+      }
+    }
+  },
+  "current": {
+    "I1": {
+      "parameter": "Current I1",
+      "value": 0.504,
+      "unit": "A"
+    },
+    "I2": {
+      "parameter": "Current I2",
+      "value": 0.828,
+      "unit": "A"
+    },
+    "I3": {
+      "parameter": "Current I3",
+      "value": 0.564,
+      "unit": "A"
+    },
+    "average": {
+      "parameter": "Average Current",
+      "value": 0.632,
+      "unit": "A"
+    },
+    "maximum": {
+      "I1": {
+        "parameter": "Maximum Current I1",
+        "value": 20.536,
+        "unit": "A"
+      },
+      "I2": {
+        "parameter": "Maximum Current I2",
+        "value": 20.69,
+        "unit": "A"
+      },
+      "I3": {
+        "parameter": "Maximum Current I3",
+        "value": 21.692,
+        "unit": "A"
+      }
+    }
+  },
+  "active_power": {
+    "kW1": {
+      "parameter": "kW1",
+      "value": 0.026,
+      "unit": "kW"
+    },
+    "kW2": {
+      "parameter": "kW2",
+      "value": -0.114,
+      "unit": "kW"
+    },
+    "kW3": {
+      "parameter": "kW3",
+      "value": -0.111,
+      "unit": "kW"
+    },
+    "total": {
+      "parameter": "Total kW",
+      "value": -0.199,
+      "unit": "kW"
+    }
+  },
+  "reactive_power": {
+    "kVAr1": {
+      "parameter": "kVAr1",
+      "value": 0.118,
+      "unit": "kVAr"
+    },
+    "kVAr2": {
+      "parameter": "kVAr2",
+      "value": 0.162,
+      "unit": "kVAr"
+    },
+    "kVAr3": {
+      "parameter": "kVAr3",
+      "value": -0.076,
+      "unit": "kVAr"
+    },
+    "total": {
+      "parameter": "Total kVAr",
+      "value": 0.205,
+      "unit": "kVAr"
+    }
+  },
+  "apparent_power": {
+    "kVA1": {
+      "parameter": "kVA1",
+      "value": 0.121,
+      "unit": "kVA"
+    },
+    "kVA2": {
+      "parameter": "kVA2",
+      "value": 0.198,
+      "unit": "kVA"
+    },
+    "kVA3": {
+      "parameter": "kVA3",
+      "value": 0.135,
+      "unit": "kVA"
+    },
+    "total": {
+      "parameter": "Total kVA",
+      "value": 0.454,
+      "unit": "kVA"
+    }
+  },
+  "power_factor": {
+    "PF1": {
+      "parameter": "PF1",
+      "value": -0.213,
+      "unit": ""
+    },
+    "PF2": {
+      "parameter": "PF2",
+      "value": -0.574,
+      "unit": ""
+    },
+    "PF3": {
+      "parameter": "PF3",
+      "value": 0.825,
+      "unit": ""
+    },
+    "average": {
+      "parameter": "Average PF",
+      "value": -0.697,
+      "unit": ""
+    }
+  },
+  "frequency": {
+    "parameter": "Frequency",
+    "value": 49.941,
+    "unit": "Hz"
+  },
+  "demand": {
+    "active_power": {
+      "maximum": {
+        "parameter": "Active Power Max Demand",
+        "value": 0.103,
+        "unit": "kW"
+      },
+      "minimum": {
+        "parameter": "Active Power Min Demand",
+        "value": -0.94,
+        "unit": "kW"
+      }
+    },
+    "reactive_power": {
+      "maximum": {
+        "parameter": "Reactive Power Max Demand",
+        "value": 1.159,
+        "unit": "kVAr"
+      },
+      "minimum": {
+        "parameter": "Reactive Power Min Demand",
+        "value": -0.11,
+        "unit": "kVAr"
+      }
+    },
+    "apparent_power": {
+      "maximum": {
+        "parameter": "Apparent Power Max Demand",
+        "value": 4.791,
+        "unit": "kVA"
+      }
+    }
+  },
+  "energy": {
+    "import_active": {
+      "parameter": "Import Active Energy",
+      "value": 249.1,
+      "unit": "kWh"
+    },
+    "export_active": {
+      "parameter": "Export Active Energy",
+      "value": 430.2,
+      "unit": "kWh"
+    },
+    "total_active": {
+      "parameter": "Total Active Energy",
+      "value": 681.4,
+      "unit": "kWh"
+    },
+    "import_reactive": {
+      "parameter": "Import Reactive Energy",
+      "value": 313.5,
+      "unit": "kVArh"
+    },
+    "export_reactive": {
+      "parameter": "Export Reactive Energy",
+      "value": 115,
+      "unit": "kVArh"
+    },
+    "total_reactive": {
+      "parameter": "Total Reactive Energy",
+      "value": 431.2,
+      "unit": "kVArh"
+    },
+    "total_apparent": {
+      "parameter": "Total Apparent Energy",
+      "value": 858.7,
+      "unit": "kVAh"
+    }
+  },
+  "operating_data": {
+    "run_hour": {
+      "parameter": "Run Hour",
+      "value": null,
+      "unit": "Hour"
+    },
+    "auxiliary_interrupts": {
+      "parameter": "Auxiliary Interrupts",
+      "value": null,
+      "unit": "Count"
+    }
+  },
+  "THD": {
+    "voltage": {
+      "V1N": {
+        "parameter": "THD Voltage V1N",
+        "value": null,
+        "unit": "%"
+      },
+      "V2N": {
+        "parameter": "THD Voltage V2N",
+        "value": null,
+        "unit": "%"
+      },
+      "V3N": {
+        "parameter": "THD Voltage V3N",
+        "value": null,
+        "unit": "%"
+      },
+      "V12": {
+        "parameter": "THD Voltage V12",
+        "value": null,
+        "unit": "%"
+      },
+      "V23": {
+        "parameter": "THD Voltage V23",
+        "value": null,
+        "unit": "%"
+      },
+      "V31": {
+        "parameter": "THD Voltage V31",
+        "value": null,
+        "unit": "%"
+      }
+    },
+    "current": {
+      "I1": {
+        "parameter": "THD Current I1",
+        "value": null,
+        "unit": "%"
+      },
+      "I2": {
+        "parameter": "THD Current I2",
+        "value": null,
+        "unit": "%"
+      },
+      "I3": {
+        "parameter": "THD Current I3",
+        "value": null,
+        "unit": "%"
+      }
+    }
+  }
+}

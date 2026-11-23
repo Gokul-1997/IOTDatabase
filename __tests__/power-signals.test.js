@@ -170,7 +170,8 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
   test('VMC - 1 - F: all 52 values land in their columns', () => {
     const r = meterReading(sample);
     expect(Object.keys(r)).toEqual(METER_FIELDS.map(([c]) => c));
-    expect(Object.values(r).every(v => v !== null)).toBe(true);
+    expect(Object.entries(r).filter(([column]) => !column.startsWith('thd_')).every(([, v]) => v !== null)).toBe(true);
+    expect(Object.entries(r).filter(([column]) => column.startsWith('thd_')).every(([, v]) => v === null)).toBe(true);
     expect(r).toMatchObject({
       v1n: 241.35000610351562, v_ln_avg: 240.58999633789062, v12: 418.05999755859375, v_ll_avg: 416.7300109863281,
       i1: 1.090000033378601, i_avg: 1.24399995803833,

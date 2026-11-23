@@ -50,6 +50,8 @@ export async function startServer(config) {
         ? 'the alarm priority event schema is missing — apply Backend migration 048_alarm_notification_policies.sql (Backend: npm run migrate), then restart the collector'
         : missing.includes('acc_battery_status') || missing.includes('cnc_battery_warning')
           ? 'FANUC battery diagnostic columns are missing — apply Backend migration 062 (Backend: npm run migrate), then restart the collector'
+          : missingE.some(column => column.startsWith('energy_meter_readings.thd_'))
+            ? 'energy meter THD columns or UPDATE grants are missing — apply Backend migration 066_energy_meter_thd.sql, then restart the collector'
           : missingE.length || missingT.includes('energy_observations')
             ? 'sparse energy storage is missing — apply Backend migration 063_sparse_energy_observations.sql, then restart the collector'
           : 'the database is missing what this build writes — apply the pending migrations (Backend: npm run migrate), then restart',

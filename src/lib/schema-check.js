@@ -13,6 +13,8 @@
  * and they replay once the migration is applied and the service restarts.
  */
 
+import { METER_FIELDS } from './power-signals.js';
+
 /**
  * Columns in `columns` that telemetry_raw does not have.
  *
@@ -55,12 +57,13 @@ export async function missingTables(pool, tables) {
   return tables.filter(t => !have.has(t));
 }
 
-/** Sparse merges require the marker and the column-level UPDATE grant. */
+/** Every generated INSERT/merge column must exist before MQTT admission. */
 export async function missingMeterSchema(pool) {
+  const columns = [...METER_FIELDS.map(([column]) => column), 'standalone', 'standalone_fields'];
   const { rows } = await pool.query(`SELECT attname AS column_name,
     has_column_privilege(current_user,attrelid,attname,'UPDATE') AS can_update
     FROM pg_attribute WHERE attrelid=to_regclass('energy_meter_readings')
-      AND attnum>0 AND NOT attisdropped AND attname IN ('standalone','standalone_fields')`);
-  return ['standalone','standalone_fields'].every(column => rows.some(row => row.column_name === column && row.can_update))
-    ? [] : ['energy_meter_readings.standalone/UPDATE'];
+      AND attnum>0 AND NOT attisdropped AND attname = ANY($1::text[])`, [columns]);
+  const available = new Map(rows.map(row => [row.column_name, row.can_update]));
+  return columns.filter(column => !available.get(column)).map(column => `energy_meter_readings.${column}/UPDATE`);
 }
