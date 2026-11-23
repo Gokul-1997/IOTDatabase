@@ -19,7 +19,8 @@ test('readings on time log nothing; /metrics shows each machine\'s latest lag', 
     advance(3_000);
   }
   expect(lines).toEqual([]);
-  expect(lag.snapshot()).toEqual({ worst: { machine_id: 15, lag_ms: 2_400 }, machines: { 15: 2_400, 28: -900 } });
+  const cnc = { worst: { machine_id: 15, lag_ms: 2_400 }, machines: { 15: 2_400, 28: -900 } };
+  expect(lag.snapshot()).toEqual({ ...cnc, sources: { cnc } });
 });
 
 test('a gateway 14.5 s behind for two minutes: one warning, naming each late machine and its worst lag', () => {
@@ -184,4 +185,79 @@ test('/metrics lines, in seconds', () => {
     'pms_ingress_lag_seconds{machine_id="28"} -0.9'
   ]);
   expect(lagMetricLines({ worst: null, machines: {} })).toEqual([]);
+});
+
+test.each([['cnc', 'energy'], ['energy', 'cnc']])(
+  'a steady late %s publisher is not recovered or overwritten by an on-time %s publisher', (lateSource, healthySource) => {
+    const { lag, lines, advance } = setup();
+    for (let i = 0; i < 5 * 20; i++) {
+      lag.observe(84, 17_518, lateSource);
+      lag.observe(84, 500, healthySource);
+      advance(3_000);
+    }
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 'warn', source: lateSource, machines: { 84: 17_518 } });
+    const snapshot = lag.snapshot();
+    expect(snapshot.worst).toEqual({ machine_id: 84, lag_ms: 17_518 });
+    expect(snapshot.machines).toEqual({ 84: 17_518 });
+    expect(snapshot.sources[lateSource].machines).toEqual({ 84: 17_518 });
+    expect(snapshot.sources[healthySource].machines).toEqual({ 84: 500 });
+  }
+);
+
+test('both publishers report and recover independently for the same machine', () => {
+  const { lag, lines, advance } = setup();
+  lag.observe(84, 17_518, 'cnc');
+  lag.observe(84, 25_000, 'energy');
+  advance(61_000);
+  lag.observe(30, 500, 'cnc');
+  expect(lines.map(line => [line.msg, line.source, line.machines])).toEqual([
+    ['readings arriving late', 'cnc', { 84: 17_518 }],
+    ['readings arriving late', 'energy', { 84: 25_000 }]
+  ]);
+  lag.observe(84, 500, 'cnc');
+  advance(61_000);
+  lag.observe(84, 25_000, 'energy');
+  expect(lines[2]).toMatchObject({ msg: 'readings on time again', source: 'cnc', machines: [84] });
+  expect(lag.snapshot().machines[84]).toBe(25_000);
+  lag.observe(84, 500, 'energy');
+  advance(61_000);
+  lag.observe(84, 500, 'cnc');
+  expect(lines[3]).toMatchObject({ msg: 'readings on time again', source: 'energy', machines: [84] });
+});
+
+test('an expired CNC source does not expire active energy measurements or announce recovery', () => {
+  const { lag, lines, advance } = setup();
+  lag.observe(84, 17_518, 'cnc');
+  lag.observe(84, 500, 'energy');
+  advance(61_000);
+  lag.observe(84, 500, 'energy');
+  expect(lines[0]).toMatchObject({ msg: 'readings arriving late', source: 'cnc', machines: { 84: 17_518 } });
+  advance(10 * 60_000);
+  lag.observe(84, 600, 'energy');
+  const snapshot = lag.snapshot();
+  expect(snapshot.sources.cnc).toEqual({ worst: null, machines: {} });
+  expect(snapshot.sources.energy.machines).toEqual({ 84: 600 });
+  expect(snapshot.machines).toEqual({ 84: 600 });
+  expect(lines.filter(line => line.msg === 'readings on time again')).toEqual([]);
+});
+
+test('source metrics preserve the aggregate series and expose both publisher clocks', () => {
+  const { lag } = setup();
+  lag.observe(84, 17_518, 'cnc');
+  lag.observe(84, 500, 'energy');
+  expect(lagMetricLines(lag.snapshot())).toEqual([
+    'pms_ingress_lag_max_seconds 17.5',
+    'pms_ingress_lag_seconds{machine_id="84"} 17.5',
+    'pms_ingress_lag_source_max_seconds{source="cnc"} 17.5',
+    'pms_ingress_lag_source_seconds{source="cnc",machine_id="84"} 17.5',
+    'pms_ingress_lag_source_max_seconds{source="energy"} 0.5',
+    'pms_ingress_lag_source_seconds{source="energy",machine_id="84"} 0.5'
+  ]);
+});
+
+test('source labels are fixed to avoid unbounded publisher state or metric labels', () => {
+  const { lag } = setup();
+  expect(() => lag.observe(84, 500, 'arbitrary-publisher')).toThrow('Unknown telemetry source');
+  expect(lag.snapshot()).toEqual({ worst: null, machines: {}, sources: {} });
 });

@@ -65,6 +65,16 @@ telemetry. Device timestamp must be finite integer epoch seconds, from 2000 onwa
 and no more than 60 s ahead of the collector. Payloads are limited to 64 KiB and 12
 nested levels. Readings over 5 min old go to `telemetry_late`, including at startup;
 they are never advertised as current observations.
+Lag warnings and recovery are tracked independently for `cnc` snapshots and
+standalone `energy` packets. An on-time packet from one publisher cannot mark
+the other publisher recovered. Logs include `source`; `/health` exposes both
+under `ingress_lag.sources`, and `/metrics` adds
+`pms_ingress_lag_source_seconds{source="cnc",machine_id="84"}` (or `energy`).
+The existing machine-level lag metrics show the worst latest lag across its
+recently observed sources. Warning at 10 s and the 5-minute stale cutoff are
+unchanged. Lag compares receive time with device time, so a real delay can
+reflect publisher clock offset, slow collection/publishing or queued delivery;
+the warning alone does not distinguish them.
 Valid electrical fields in stale or out-of-order packets also enter
 `energy_meter_readings`, with their original event time and source priority, for
 historical reconciliation. Their original receipt time remains in

@@ -154,7 +154,8 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
 
   const receivedAt = new Date(receivedAtMs).toISOString();
   const ingressLatencyMs = receivedAtMs - deviceTime * 1000;
-  ingressLag?.observe(machine.id, ingressLatencyMs);
+  const energyPacket = isEnergyPacket(payload);
+  ingressLag?.observe(machine.id, ingressLatencyMs, energyPacket ? 'energy' : 'cnc');
 
   if (ingressLatencyMs > maxStaleMs) {
     await keepLate(machine, payload, deviceTime, receivedAt, 'stale', ingressLatencyMs);
@@ -162,7 +163,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
     return;
   }
 
-  if (isEnergyPacket(payload)) {
+  if (energyPacket) {
     await handleEnergy(machine, payload, deviceTime, receivedAt, hash); return;
   }
 

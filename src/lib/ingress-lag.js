@@ -1,6 +1,8 @@
 /*
  * How late readings reach the collector: the moment a reading arrived
- * against its own timestamp (payload.time, the gateway's clock).
+ * against its own timestamp (payload.time or payload.timestamp).
+ * CNC and standalone energy publishers have independent clocks and queues;
+ * an on-time reading from one cannot establish recovery for the other.
  *
  * A few seconds is normal. A gateway that falls behind shows here long
  * before its readings pass the 5-minute limit and are set aside in
@@ -21,10 +23,9 @@ const FORGET_MS = 10 * 60_000;   // a machine not heard from for 10 min drops of
 // steps towards the 5-minute limit; a lag that crosses one is logged at once
 const STEPS_MS = [60_000, 120_000, 240_000];
 
-export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs = 15 * 60_000, limitMs = 5 * 60_000, log, now = Date.now } = {}) {
+function createSourceLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs = 15 * 60_000, limitMs = 5 * 60_000, log, now = Date.now } = {}, windowStart = now()) {
   const latest = new Map();   // machine id → { ms, at }
   let late = new Map();       // machine id → { readings, worstMs } since the last summary
-  let windowStart = now();
   const shown = new Map();    // unresolved reported machines → last reported severity step
   const recovered = new Set(); // reported machines with a subsequent on-time reading
   let lastShownAt = -Infinity;
@@ -96,6 +97,11 @@ export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs =
       if (t - windowStart >= everyMs) summarize(t);
     },
 
+    summarizeDue() {
+      const t = now();
+      if (t - windowStart >= everyMs) summarize(t);
+    },
+
     /* The latest lag of every machine heard from in the last 10 minutes.
        Negative means the gateway's clock is ahead of this server's. */
     snapshot() {
@@ -112,11 +118,51 @@ export function createLagTracker({ warnMs = 10_000, everyMs = 60_000, remindMs =
   };
 }
 
+export function createLagTracker(options = {}) {
+  const sources = new Map();
+  const startedAt = (options.now ?? Date.now)();
+  return {
+    observe(machineId, lagMs, source = 'cnc') {
+      if (source !== 'cnc' && source !== 'energy') throw new RangeError('Unknown telemetry source');
+      if (!sources.has(source)) {
+        sources.set(source, createSourceLagTracker({ ...options,
+          log: (level, msg, meta) => options.log?.(level, msg, { ...meta, source })
+        }, startedAt));
+      }
+      sources.get(source).observe(machineId, lagMs);
+      // A silent publisher can still have an unsummarized late observation.
+      // Other traffic closes its window without establishing its recovery.
+      for (const tracker of sources.values()) tracker.summarizeDue();
+    },
+
+    /* Preserve aggregate fields for health/metrics consumers. Each machine's
+       aggregate is its worst latest source lag; sources retain both clocks. */
+    snapshot() {
+      const machines = {}, snapshots = {};
+      let worst = null;
+      for (const [source, tracker] of sources) {
+        const snapshot = tracker.snapshot();
+        snapshots[source] = snapshot;
+        for (const [id, ms] of Object.entries(snapshot.machines)) {
+          if (!Object.hasOwn(machines, id) || ms > machines[id]) machines[id] = ms;
+        }
+        if (snapshot.worst && (!worst || snapshot.worst.lag_ms > worst.lag_ms)) worst = snapshot.worst;
+      }
+      return { worst, machines, sources: snapshots };
+    }
+  };
+}
+
 /* The /metrics lines, in seconds. */
-export function lagMetricLines({ worst, machines }) {
+export function lagMetricLines({ worst, machines, sources = {} }) {
   const sec = ms => (ms / 1000).toFixed(1);
   return [
     ...(worst ? [`pms_ingress_lag_max_seconds ${sec(worst.lag_ms)}`] : []),
-    ...Object.entries(machines).map(([id, ms]) => `pms_ingress_lag_seconds{machine_id="${id}"} ${sec(ms)}`)
+    ...Object.entries(machines).map(([id, ms]) => `pms_ingress_lag_seconds{machine_id="${id}"} ${sec(ms)}`),
+    ...Object.entries(sources).flatMap(([source, snapshot]) => [
+      ...(snapshot.worst ? [`pms_ingress_lag_source_max_seconds{source="${source}"} ${sec(snapshot.worst.lag_ms)}`] : []),
+      ...Object.entries(snapshot.machines).map(([id, ms]) =>
+        `pms_ingress_lag_source_seconds{source="${source}",machine_id="${id}"} ${sec(ms)}`)
+    ])
   ];
 }
