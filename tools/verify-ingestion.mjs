@@ -31,7 +31,7 @@ try {
   }
   const json = new Set(['fan_status', 'extra_axes', 'apc_battery_status']);
   const text = new Set(['machine_status', 'mode']);
-  await pool.query(`CREATE TABLE telemetry_raw (${TELEMETRY_COLUMNS.map(column =>
+  await pool.query(`CREATE TABLE telemetry_raw (${TELEMETRY_COLUMNS.filter(column => column !== 'controller_downtime_value').map(column =>
     `${column} ${column === 'received_at' ? 'timestamptz' : column === 'alarm' ? 'boolean' : json.has(column) ? 'jsonb' : text.has(column) ? 'text' : 'double precision'}`).join(',')});
     CREATE TABLE companies(id int PRIMARY KEY);
     CREATE TABLE users(id int PRIMARY KEY);
@@ -58,6 +58,8 @@ try {
   await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/047_alarm_notifications.sql', import.meta.url), 'utf8'));
   await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/048_alarm_notification_policies.sql', import.meta.url), 'utf8'));
   await pool.query(fs.readFileSync(new URL('../../Backend/src/migrations/063_sparse_energy_observations.sql', import.meta.url), 'utf8'));
+  const downtimeMigration = fs.readFileSync(new URL('../../Backend/src/migrations/067_controller_downtime_value.sql', import.meta.url), 'utf8');
+  await pool.query(downtimeMigration); await pool.query(downtimeMigration);
   const rights = (await pool.query(`SELECT has_table_privilege('machine_api_user','ingest_gaps','SELECT') AS can_read,
     has_table_privilege('machine_api_user','ingest_gaps','INSERT') AS can_insert,
     has_table_privilege('machine_api_user','ingest_gaps','UPDATE') AS can_update,
@@ -74,7 +76,7 @@ try {
   const processor = createMessageProcessor({ journal, shifts, lookupMachine: async () => machine,
     hydrate: async () => null, redis: { isReady: false } });
   const now = Date.now(), time = Math.floor(now / 1000);
-  await processor.handleMessage('device', { time: time - 2, machine_status: 'RUN', parts_count: 100 }, now);
+  await processor.handleMessage('device', { time: time - 2, machine_status: 'RUN', parts_count: 100, downtime: 0 }, now);
   let down = true, loseCommitReply = true;
   const unreliablePool = { connect: async () => {
     if (down) throw new Error('simulated outage');
@@ -88,6 +90,7 @@ try {
   const flusher = createFlusher({ pool: unreliablePool, journal, collectorId: 'isolated-test', telemetryInsert });
   await assert.rejects(flusher.pass(), /outage/);
   await processor.handleMessage('device', { time: time - 1, machine_status: 'STOP', parts_count: 101,
+    downtime: 4,
     stat_alarm: 1, pmc_alarm: { alarms: [{ code: 'SV0401', type: 'SV', severity: 'CRITICAL' }] },
     powerdata: { total_kw: 12, total_active_energy_kwh: 120 } }, now);
   await processor.handleMessage('device', { time, machine_status: 'RUN', parts_count: 102 }, now);
@@ -95,6 +98,8 @@ try {
   await assert.rejects(flusher.pass(), /lost COMMIT response/);
   await flusher.pass();
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM telemetry_raw')).rows[0].n, 3);
+  assert.deepEqual((await pool.query('SELECT controller_downtime_value FROM telemetry_raw ORDER BY device_time')).rows
+    .map(row => row.controller_downtime_value), [0, 4, null]);
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM energy_meter_readings')).rows[0].n, 1);
   const alarm = (await pool.query('SELECT * FROM machine_alarms')).rows;
   assert.equal(alarm.length, 1); assert.equal(alarm[0].alarm_code, 'SV0401'); assert.ok(alarm[0].ended_at);

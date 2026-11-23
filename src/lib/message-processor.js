@@ -8,6 +8,7 @@ import { alarmKey, alarmTransition } from './alarm-transition.js';
 import { alarmFields } from './alarm-text.js';
 import { fingerprint, validDeviceTime } from './admission.js';
 import { fanucBatterySignals, fanucBatteryAlarms } from './fanuc-battery.js';
+import { controllerDowntimeValue } from './controller-downtime.js';
 
 const RUN_STATES = new Set(['RUN', 'RUNNING', 'CUTTING']);
 const num = v => {
@@ -288,6 +289,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   // Counter deltas across an offline gap cannot be assigned to a particular
   // hour/shift. Preserve provenance and raw counters for later reconciliation.
 
+  const controllerDowntime = controllerDowntimeValue(payload);
   const livePayload = {
       machine_id:     machine.id,
       plant_id:       machine.plant_id,
@@ -295,6 +297,8 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
       shift_id:       shiftId,
       machine_status: normalized.machine_status,
       alarm:          normalized.alarm,
+      controller_downtime_value: controllerDowntime,
+      controller_downtime_observed_at: controllerDowntime === null ? null : deviceTime,
       alarm_codes:    alarmCodes,
       alarm_severities: Object.fromEntries(alarmsNow.map(alarm => [alarmKey(alarm), alarmFields(alarm).severity])),
       battery_alarm_codes: batteryAlarms.codes,
@@ -341,6 +345,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
     machine_id:     machine.id,
     machine_status: normalized.machine_status,
     alarm:          normalized.alarm,
+    controller_downtime_value: controllerDowntime,
     parts_count:    partsCount,
     spindle_load:   num(payload.spindle_load),
     feed_rate:      num(payload.feed_rate),

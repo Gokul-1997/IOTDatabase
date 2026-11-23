@@ -75,6 +75,7 @@ const COLUMNS = [
   ['machine_status',         r => RUN_STATES.has(String(r.machine_status || '').toUpperCase()) ? 'RUNNING' : 'IDLE'],
   ['alarm',                  r => r.alarm === true],
   ['status',                 ranged('status', INT2, r => r.status)],
+  ['controller_downtime_value', r => r.controller_downtime_value ?? null],
   ['parts_count',            ranged('parts_count', INT4, r => r.parts_count)],
   ['spindle_load',           r => r.spindle_load ?? null],
   ['feed_rate',              r => r.feed_rate ?? null],

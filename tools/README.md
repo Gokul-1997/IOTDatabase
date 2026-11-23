@@ -47,6 +47,14 @@ observations are not sampled: any valid supplied field is persisted. The new
 energy reconciliation and aggregate read model is enabled separately in Backend;
 the collector retains the existing topics and CNC processing contract.
 
+The current collector also requires migrations **066** (THD) and **067**
+(controller downtime signal) before it starts. The raw MQTT `downtime` number
+is stored as nullable `controller_downtime_value`, with zero preserved as an
+actual observation. Its PLC meaning and units are not inferred. The machine
+detail shows a nonzero fresh signal separately from its explicit PMC alarms;
+zero, missing or stale signals do not display a reason. This does not create
+operator downtime events or assume the raw number is a configured reason ID.
+
 Alarm text writers now match the existing VARCHAR(50) type/code contract and preserve full original descriptions in TEXT. For rejected records, `node tools/inspect-quarantine.mjs <file> --seq <sequence>` provides private read-only IDs/field-length diagnostics without loading environment or connecting services. See [quarantine text correction and recovery limits](../deploy/QUARANTINE_TEXT_FIX.md). Restarting does not automatically replay records the checkpoint has already passed.
 Gap records are queryable by company/machine/time and commit with the journal checkpoint.
 No retroactive shift allocation or automatic retention deletion is performed.

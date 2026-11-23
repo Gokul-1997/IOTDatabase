@@ -108,3 +108,27 @@ test('missing THD migration exits with migration 066 guidance before MQTT admiss
     for (const effect of [open, writerStart, shiftStart, startHealthServer, startMQTT]) expect(effect).not.toHaveBeenCalled();
   } finally { exit.mockRestore(); error.mockRestore(); }
 });
+
+test('missing controller downtime migration prevents accepting packets that cannot be stored', async () => {
+  telemetryColumns.push('controller_downtime_value');
+  query.mockImplementation(async sql => {
+    if (sql.includes("table_name = 'telemetry_raw'")) return { rows: [{ column_name: 'machine_id' }] };
+    if (sql.includes("to_regclass('machine_alarms')")) return { rows: ['notification_continuity_started_at',
+      'notification_priority_changed_at', 'severity_observed_at', 'severity_received_at', 'ended_received_at']
+      .map(column_name => ({ column_name })) };
+    if (sql.includes("to_regclass('energy_meter_readings')")) return { rows: [...METER_FIELDS.map(([column]) => column),
+      'standalone', 'standalone_fields'].map(column_name => ({ column_name, can_update: true })) };
+    return { rows: ['ingest_checkpoint', 'telemetry_late', 'machine_alarms', 'energy_meter_readings',
+      'ingest_gaps', 'alarm_notification_events', 'energy_observations'].map(table_name => ({ table_name })) };
+  });
+  const exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await startServer({});
+    expect(exit).toHaveBeenCalledWith(1);
+    const log = JSON.parse(error.mock.calls[0][0]);
+    expect(log.msg).toContain('067_controller_downtime_value.sql');
+    expect(log.missing_columns).toEqual(['controller_downtime_value']);
+    for (const effect of [open, writerStart, shiftStart, startHealthServer, startMQTT]) expect(effect).not.toHaveBeenCalled();
+  } finally { telemetryColumns.splice(1); exit.mockRestore(); error.mockRestore(); }
+});
