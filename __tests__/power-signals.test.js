@@ -202,9 +202,10 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
   });
 
   test.each(METER_FIELDS)('a single PowerData field %s is stored independently', (column, key) => {
-    const reading = meterReading({ PowerData: { [key]: 7 } });
-    expect(reading[column]).toBe(7);
-    expect(Object.entries(reading).filter(([, value]) => value !== null)).toEqual([[column, 7]]);
+    const value = column.startsWith('pf') ? 0.7 : 7;
+    const reading = meterReading({ PowerData: { [key]: value } });
+    expect(reading[column]).toBe(value);
+    expect(Object.entries(reading).filter(([, value]) => value !== null)).toEqual([[column, value]]);
   });
 
   test.each([
@@ -238,24 +239,24 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
     expect(meterReading({ PowerData: { Average_Voltage_LL: 1e100 }, voltage: 415 }).v_ll_avg).toBe(415);
   });
 
-  test('finite values outside REAL storage bounds stay null and do not poison the reading', () => {
+  test('finite storage overflow and impossible cumulative readings stay null without losing valid fields', () => {
     const r = meterReading({ PowerData: { Voltage_V1N: 1e100, Total_kW: -1e100,
       Frequency: 1e-100, Average_Current: 2, Total_Active_Energy_kWh: 1e100 } });
     expect(r.v1n).toBeNull();
     expect(r.kw_total).toBeNull();
     expect(r.frequency_hz).toBeNull();
     expect(r.i_avg).toBe(2);
-    expect(r.kwh_total).toBe(1e100); // this column is DOUBLE PRECISION
+    expect(r.kwh_total).toBeNull(); // Finite DOUBLE values still need physical admission bounds.
     expect(meterReading({ PowerData: { Total_kW: 1e100 } })).toBeNull();
   });
 
-  test('REAL boundaries and true zero remain representable, including signed power', () => {
+  test('storage representability cannot admit impossible voltage or signed power while true zero survives', () => {
     const max = (2 - 2 ** -23) * 2 ** 127, min = 2 ** -149;
     const r = meterReading({ PowerData: { Total_kW: -max, Total_kVAr: min,
       Average_Voltage_LL: max, Average_Current: 0 } });
-    expect(r.kw_total).toBe(-max);
+    expect(r.kw_total).toBeNull();
     expect(r.kvar_total).toBe(min);
-    expect(r.v_ll_avg).toBe(max);
+    expect(r.v_ll_avg).toBeNull();
     expect(r.i_avg).toBe(0);
   });
 
@@ -267,9 +268,9 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
     expect(meterReading({ PowerData: { Auxiliary_Interrupts: -1 } })).toBeNull();
   });
 
-  test('telemetry DOUBLE fields retain finite values rather than inheriting REAL meter limits', () => {
+  test('both storage paths reject the same impossible finite meter values', () => {
     expect(powerSignals({ energy: 1e100, voltage: 1e100, current: 1e100, power: -1e100 }))
-      .toEqual({ energy: 1e100, voltage: 1e100, current: 1e100, power: -1e100 });
+      .toEqual({ energy: null, voltage: null, current: null, power: null });
   });
 
   test.each([
@@ -280,4 +281,41 @@ describe('meterReading — the whole block, for energy_meter_readings', () => {
   ])('%s → null, so nothing is written', (_label, payload) => {
     expect(meterReading(payload)).toBeNull();
   });
+});
+
+describe('meter corruption admission across legacy and grouped publishers', () => {
+  const leaf = (value, unit) => ({ value, unit });
+
+  test('a corrupt grouped channel falls through to a valid legacy alternative per channel', () => {
+    const payload = {
+      energy: { total_active: leaf(1e20, 'kWh') }, EnergyFormatted: '681.4 kWh',
+      voltage: { average_LL: leaf(1.5e15, 'V') },
+      current: { average: leaf(2.5e27, 'A') },
+      active_power: { total: leaf(3.042361197625866e31, 'kW') },
+      PowerData: { Average_Voltage_LL: 414.78, Average_Current: 0, Total_kW: -0.199 }
+    };
+    expect(powerSignals(payload)).toEqual({ energy: 681.4, voltage: 414.78, current: 0, power: -0.199 });
+    expect(meterReading(payload)).toMatchObject({ kwh_total: 681.4, v_ll_avg: 414.78, i_avg: 0, kw_total: -0.199 });
+  });
+
+  test('a corrupt primary flat alias cannot hide the next valid reading', () => {
+    const payload = { Energy: 1e20, EnergyData: { Total_kWh: 100 },
+      PowerData: { Average_Voltage_LL: 1e15, Average_Current: 1e27, Total_kW: 1e31 },
+      volts: 415, amperes: 2, power: -1 };
+    expect(powerSignals(payload)).toEqual({ energy: 100, voltage: 415, current: 2, power: -1 });
+    expect(meterReading(payload)).toMatchObject({ kwh_total: 100, v_ll_avg: 415, i_avg: 2, kw_total: -1 });
+  });
+
+  test('rejecting one channel preserves valid signed and sparse sensor readings', () => {
+    const reading = meterReading({ PowerData: { Average_Voltage_LL: 1e15,
+      Total_kW: -0.199, Total_kVAr: -0.076, Average_PF: -0.697,
+      THD_Current_I1: 135, Auxiliary_Interrupts: 0 } });
+    expect(Object.entries(reading).filter(([, value]) => value !== null)).toEqual([
+      ['kw_total', -0.199], ['kvar_total', -0.076], ['pf_avg', -0.697],
+      ['aux_interrupts', 0], ['thd_i1', 135]
+    ]);
+    expect(meterReading({ PowerData: { Average_Voltage_LL: 1e15 } })).toBeNull();
+  });
+
+
 });

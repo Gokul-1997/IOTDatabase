@@ -39,6 +39,8 @@
 
 import { canonicalPayload } from './condition-signals.js';
 import { parseEnergy, parsePower } from './normalize-status.js';
+import quality from './energy-quality.cjs';
+const { cleanElectrical } = quality;
 
 const isBlock = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 // Migration029 uses REAL for instantaneous readings, DOUBLE PRECISION for
@@ -158,11 +160,16 @@ export function powerSignals(payload) {
   const m   = meterBlock(top);
   const candidates = readingCandidates(top, m);
 
+  const select = (column, read, unsigned = false) => {
+    const nested = nestedCandidate(top, column);
+    return firstReading([nested, ...candidates[column]], candidate => cleanElectrical(column,
+      candidate === nested ? nestedNumber(candidate, unsigned) : read(candidate)));
+  };
   return {
-    energy:  nestedNumber(nestedCandidate(top, 'kwh_total'), true) ?? firstReading(candidates.kwh_total, energyQuantity),
-    voltage: nestedNumber(nestedCandidate(top, 'v_ll_avg'), true) ?? firstReading(candidates.v_ll_avg, v => meterNumber(v, true)),
-    current: nestedNumber(nestedCandidate(top, 'i_avg'), true) ?? firstReading(candidates.i_avg, v => meterNumber(v, true)),
-    power:   nestedNumber(nestedCandidate(top, 'kw_total')) ?? firstReading(candidates.kw_total, powerQuantity)
+    energy: select('kwh_total', energyQuantity, true),
+    voltage: select('v_ll_avg', v => meterNumber(v, true), true),
+    current: select('i_avg', v => meterNumber(v, true), true),
+    power: select('kw_total', powerQuantity)
   };
 }
 
@@ -238,7 +245,7 @@ export function meterReading(payload) {
         const magnitude = Math.abs(value);
         if (magnitude > FLOAT4_MAX || (magnitude !== 0 && magnitude < FLOAT4_MIN)) value = null;
       }
-      return value;
+      return cleanElectrical(column, value);
     });
     out[column] = value;
     if (value !== null) any = true;

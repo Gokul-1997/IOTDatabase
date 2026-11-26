@@ -25,7 +25,8 @@ test.each([{}, {PowerData:{}},{PowerData:{Total_kW:'unknown'}},{EnergyFormatted:
  expect(parseTelemetry(packet(p),time*1000)).toBeNull();
 });
 test.each(METER_FIELDS)('individual %s persists without other fields',async(column,key)=>{
- const f=fixture();await f.send(0,{PowerData:{[key]:7}});expect(f.records[0].m.reading[column]).toBe(7);
+ const value=column.startsWith('pf')?0.7:7;
+ const f=fixture();await f.send(0,{PowerData:{[key]:value}});expect(f.records[0].m.reading[column]).toBe(value);
 });
 test('independent energy leaves CNC runtime, alarms, counters and freshness untouched',async()=>{
  const f=fixture();await f.send(0,{time,machine_status:'RUN',parts_count:100,stat_alarm:1,alarm_code:'EX1'});const before=f.processor.state(7);
@@ -113,4 +114,16 @@ test('late invalid electrical values stay in audit without creating a measuremen
  await f.send(400,{time,EnergyFormatted:'unknown',machine_status:'RUN'});
  expect(f.records[0].l.reason).toBe('stale');expect(f.records[0].m).toBeUndefined();
  expect(f.processor.state(7)).toBeUndefined();expect(f.publish).not.toHaveBeenCalled();
+});
+
+test('corrupt finite readings cannot overwrite a good baseline or inflate hourly energy', async()=>{
+ const f=fixture();
+ await f.send(0,{time,EnergyFormatted:100});
+ await f.send(5,{time:time+5,EnergyFormatted:1e30,PowerData:{Average_Voltage_LL:1e15,Average_Current:1e27,Total_kW:1e31}});
+ expect(f.processor.state(7).energy_meter).toBe(100);
+ expect(f.processor.state(7).meter_values).toMatchObject({kwh_total:100});
+ await f.send(10,{time:time+10,EnergyFormatted:101});
+ expect(f.records.flatMap(r=>r.h||[]).reduce((sum,slice)=>sum+slice.energy,0)).toBe(1);
+ expect(f.processor.state(7).energy_meter).toBe(101);
+ expect(f.records.filter(r=>r.m).every(r=>r.m.reading.kwh_total<1e12)).toBe(true);
 });
