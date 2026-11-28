@@ -81,6 +81,40 @@ test('Redis outage retains production continuity and same-second signal changes'
   expect(processor.state(7).alarm).toBe(true);
   journal.close();
 });
+test('slow Redis leaves durable intake running and publishes the newest queued snapshot', async () => {
+  const live = [];
+  let finishFirst;
+  const redis = {
+    isReady: true,
+    multi() {
+      const transaction = {
+        setEx: () => transaction,
+        publish: (_channel, payload) => { live.push(JSON.parse(payload)); return transaction; },
+        exec: () => live.length === 1
+          ? new Promise(resolve => { finishFirst = resolve; })
+          : Promise.resolve([])
+      };
+      return transaction;
+    }
+  };
+  const { journal, processor } = fixture({ redis });
+  try {
+    for (const parts_count of [100, 101, 102]) {
+      await processor.handleMessage('key', { time, parts_count, machine_status: 'RUN' }, now);
+    }
+    expect(journal.read(10).records).toHaveLength(3);
+    expect(processor.state(7).parts_count).toBe(102);
+    expect(live.map(reading => reading.parts_count)).toEqual([100]);
+    finishFirst([]);
+    await tick();
+    expect(live.map(reading => reading.parts_count)).toEqual([100, 102]);
+    expect(live[1].received_at).toBe(time);
+  } finally {
+    finishFirst?.([]);
+    journal.close();
+  }
+});
+
 test('restart recovers accepted counter/ordering from journal and later state snapshot', async () => {
   const { dir, journal, processor } = fixture();
   await processor.handleMessage('key', { time: time - 1, parts_count: 100, machine_status: 'RUN' }, now);

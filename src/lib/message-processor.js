@@ -61,22 +61,53 @@ export function createMessageProcessor({ journal, shifts, lookupMachine, hydrate
     count(`late_${reason}`);
     if (reading) count('energy_late_accepted');
   }
-  async function publishLive(machine, livePayload, lastKey, liveKey) {
-    if (!redis?.isReady) { count('redis_degraded'); return; }
-    let timer;
+  // The journal owns admission and alarms. Redis is a replaceable live view.
+  // A slow Redis connection gets one in-flight command and one pending
+  // snapshot per machine. New snapshots can replace intermediate updates.
+  const pendingLive = new Map();
+  const maxPendingLive = 1024;
+  let publishingLive = false;
+
+  async function drainLive() {
+    publishingLive = true;
     try {
-      // Offline queue disabled on the client; a deadline bounds slow online replies.
-      await Promise.race([
-        redis.multi().setEx(lastKey, 300, String(livePayload.received_at))
-          .setEx(liveKey, 300, JSON.stringify(livePayload))
-          .publish('machine_updates', JSON.stringify({ ...livePayload,
-            // Observation time stays the device's time; queued packets must not look newly observed.
-            received_at: livePayload.received_at,
-            ingested_at: Math.floor(Date.now() / 1000) })).exec(),
-        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Redis command timed out')), commandTimeoutMs); })
-      ]);
-    } catch { count('redis_degraded'); }
-    finally { clearTimeout(timer); }
+      while (pendingLive.size) {
+        const [liveKey, { lastKey, payload, acceptedAt }] = pendingLive.entries().next().value;
+        pendingLive.delete(liveKey);
+        if (!redis.isReady) {
+          count('redis_degraded', 1 + pendingLive.size);
+          pendingLive.clear();
+          return;
+        }
+        // Skip snapshots delayed past the collector's freshness window.
+        if (Date.now() - acceptedAt >= maxStaleMs) { count('redis_degraded'); continue; }
+        let slow = false;
+        const timer = setTimeout(() => { slow = true; count('redis_degraded'); }, commandTimeoutMs);
+        timer.unref?.();
+        try {
+          await redis.multi().setEx(lastKey, 300, String(payload.received_at))
+            .setEx(liveKey, 300, JSON.stringify(payload))
+            .publish('machine_updates', JSON.stringify({ ...payload, ingested_at: Math.floor(acceptedAt / 1000) }))
+            .exec();
+        } catch {
+          if (!slow) count('redis_degraded');
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    } finally {
+      publishingLive = false;
+    }
+  }
+
+  function publishLive(payload, lastKey, liveKey) {
+    if (!redis?.isReady) { count('redis_degraded'); return; }
+    if (!pendingLive.has(liveKey) && pendingLive.size >= maxPendingLive) {
+      pendingLive.delete(pendingLive.keys().next().value);
+      count('redis_degraded');
+    }
+    pendingLive.set(liveKey, { lastKey, payload, acceptedAt: Date.now() });
+    if (!publishingLive) void drainLive();
   }
 
 // Persist a standalone meter observation without touching the CNC clock,
@@ -399,7 +430,7 @@ async function handleMessage(apiKey, payload, receivedAtMs) {
   count('accepted');
   if (gap) count('unallocated_parts', producedDelta);
   recordMessage(`${machine.company_id}-${machine.id}-${machine.machine_serial_no}`, payload);
-  await publishLive(machine, livePayload, lastKey, liveKey);
+  publishLive(livePayload, lastKey, liveKey);
 
 
   /* The controller's own identity describes the machine, not the moment,
